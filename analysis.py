@@ -4,7 +4,7 @@ Analysis logic for the case conference prep tool.
 Kept separate from the Streamlit UI so the UI can be swapped later
 without touching the agent code.
 
-Requires: pip install google-genai python-docx
+Requires: pip install google-genai python-docx tenacity
 Set your key: export GEMINI_API_KEY="AIzaSy..."
 """
 
@@ -13,6 +13,8 @@ from typing import Iterator
 
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 try:
     from docx import Document
@@ -20,17 +22,15 @@ except ImportError:
     Document = None
 
 MODEL = "gemini-3.5-flash-lite"
+MAX_TOKENS = 3000
 
-SYSTEM_PROMPT = """You are an assistant helping a judge prepare for an early case \
-management conference. You read case documents and produce concise, neutral, \
-well-organized analysis.
+SYSTEM_PROMPT = """You are an assistant helping Judge Xavier Rodriguez prepare for an early case management conference. You read case documents and produce concise, neutral, well-organized summaries.
 
 Rules:
 - Use only what is in the documents. Do not invent facts, dates, parties, or citations.
-- Where possible, point to where information appears (page number, section, or paragraph).
+- Cite document names and specific page/paragraph numbers where possible.
 - If something is unclear, missing, or inconsistent, say so plainly.
-- Present issues as items the judge may wish to consider raising, not as legal conclusions.
-- Stay neutral between the parties."""
+- Stay completely neutral between the parties."""
 
 DOC_SUMMARY_PROMPT = """Summarize this document for a judge preparing for an early \
 case management conference. Use this structure:
@@ -43,20 +43,35 @@ case management conference. Use this structure:
 
 Be concise."""
 
-OVERVIEW_PROMPT = """Below are summaries of the documents filed in a case. \
-Based on them, write a short pre-conference briefing with this structure:
+OVERVIEW_PROMPT = """The documents for this case are provided below. Synthesize and condense all provided documents into one comprehensive pre-conference summary briefing for Judge Xavier Rodriguez.
 
-**Case snapshot** (2-4 sentences)
-**Potential issues to consider raising at the conference** (bullets; for each, note \
-which document(s) it comes from and why it may matter)
-**Inconsistencies or open questions across documents**
-**Scheduling or procedural items to confirm**
+Do NOT include recommendations, suggested questions, or judicial attention topics—provide ONLY the factual summary of the filings.
 
-Frame everything as items to consider, not conclusions.
+Use this structure:
 
-<document_summaries>
-{summaries}
-</document_summaries>"""
+### **Summary**
+A concise overview (3-5 sentences) summarizing the parties, nature of the suit, primary claims, defenses, and current procedural posture.
+
+### **Key Facts & Claims by Party**
+Bullet points summarizing plaintiff allegations and defendant position/defenses with page/paragraph citations.
+
+Write concisely and professionally for a federal district judge. Ensure every factual claim includes a precise document citation (e.g., Doc. 10, p. 2 ¶ 3)."""
+
+TIMELINE_PROMPT = """Extract all significant dates, deadlines, and milestones mentioned across the provided documents and arrange them in strict chronological order.
+
+For each entry, format the output in HTML matching this structure:
+
+<div class="timeline-item">
+    <div class="timeline-date">[Date, e.g., May 23, 2024 or By May 23, 2024]</div>
+    <b>[Short Title / Description of Event or Deadline]</b><br>
+    <span class="cite-tag">📄 [Exact Source, e.g., Doc. 10 - p. 2, ¶ 5]</span>
+</div>
+
+Rules:
+- Order entries from earliest date to latest date.
+- Include past historical events/filings AND proposed or future deadlines (e.g., discovery cutoffs, initial disclosures, motion deadlines, mediation, trial dates).
+- Every item MUST include a precise citation to the source document, page, and paragraph/section where the date appears.
+- Do NOT output any markdown headers, conversational prose, or standard lists—output ONLY the repeating `<div class="timeline-item">` blocks wrapped in a single parent container: `<div class="figma-card">...</div>`."""
 
 
 # ---------- Building model input from uploaded files ----------
@@ -81,11 +96,19 @@ def build_content(name: str, data: bytes) -> list:
     ext = name.rsplit(".", 1)[-1].lower()
 
     if ext == "pdf":
-        return [types.Part.from_bytes(data=data, mime_type="application/pdf")]
+        return [
+            f'<document name="{name}">',
+            types.Part.from_bytes(data=data, mime_type="application/pdf"),
+            '</document>'
+        ]
 
     if ext in ("png", "jpg", "jpeg"):
         mime_type = "image/png" if ext == "png" else "image/jpeg"
-        return [types.Part.from_bytes(data=data, mime_type=mime_type)]
+        return [
+            f'<document name="{name}">',
+            types.Part.from_bytes(data=data, mime_type=mime_type),
+            '</document>'
+        ]
 
     if ext == "docx":
         text = _docx_to_text(data)
@@ -102,16 +125,26 @@ def get_client() -> genai.Client:
     return genai.Client()
 
 
-def _stream(client: genai.Client, contents: list) -> Iterator[str]:
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(APIError),
+    reraise=True,
+)
+def _call_stream(client: genai.Client, contents: list):
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
-        max_output_tokens=2000,
+        max_output_tokens=MAX_TOKENS,
     )
-    response = client.models.generate_content_stream(
+    return client.models.generate_content_stream(
         model=MODEL,
         contents=contents,
         config=config,
     )
+
+
+def _stream(client: genai.Client, contents: list) -> Iterator[str]:
+    response = _call_stream(client, contents)
     for chunk in response:
         if chunk.text:
             yield chunk.text
@@ -123,8 +156,23 @@ def stream_document_summary(client: genai.Client, name: str, data: bytes) -> Ite
     return _stream(client, contents)
 
 
-def stream_case_overview(client: genai.Client, summaries: dict[str, str]) -> Iterator[str]:
-    """Stream a cross-document briefing built from the per-document summaries."""
-    joined = "\n\n".join(f'<summary document="{n}">\n{s}\n</summary>' for n, s in summaries.items())
-    contents = [OVERVIEW_PROMPT.format(summaries=joined)]
+def stream_case_overview(client: genai.Client, documents: list[tuple[str, bytes]]) -> Iterator[str]:
+    """Passes all uploaded documents directly into Gemini to generate one consolidated summary briefing."""
+    contents = []
+    
+    # Pack all uploaded documents into the input content array
+    for name, data in documents:
+        contents.extend(build_content(name, data))
+    
+    # Append the overall cross-document briefing prompt
+    contents.append(OVERVIEW_PROMPT)
+    
+    return _stream(client, contents)
+
+def stream_case_timeline(client: genai.Client, documents: list[tuple[str, bytes]]) -> Iterator[str]:
+    """Extracts chronological dates and generates timeline HTML blocks."""
+    contents = []
+    for name, data in documents:
+        contents.extend(build_content(name, data))
+    contents.append(TIMELINE_PROMPT)
     return _stream(client, contents)
