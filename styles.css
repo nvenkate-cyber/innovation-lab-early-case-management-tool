@@ -91,3 +91,37 @@
     background-color: #fef2f2;
     border: 1px solid #fca5a5;
 }
+
+/* Style citation tags as interactive triggers */
+.cite-tag {
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.cite-tag:hover {
+    background-color: #e2e8f0;
+    transform: translateY(-1px);
+}
+
+/* Document viewer highlight keyframes */
+@keyframes highlight-pulse-anim {
+    0% {
+        outline: 3px solid #2563eb;
+        background-color: rgba(37, 99, 235, 0.15);
+    }
+
+    50% {
+        outline: 3px solid #2563eb;
+        background-color: rgba(37, 99, 235, 0.25);
+    }
+
+    100% {
+        outline: 3px solid transparent;
+        background-color: transparent;
+    }
+}
+
+.highlight-pulse {
+    animation: highlight-pulse-anim 2.5s ease-in-out forwards;
+    border-radius: 6px;
+}

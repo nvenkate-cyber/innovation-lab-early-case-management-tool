@@ -79,6 +79,43 @@ def file_key(f) -> str:
     return f"{f.name}:{f.size}"
 
 
+def run_analysis(uploaded_files, client, force: bool = False) -> None:
+    """Runs document summaries, briefing overview, and timeline extraction."""
+    doc_tuples = [(f.name, f.getvalue()) for f in uploaded_files]
+    ov_key = "|".join(sorted(file_key(f) for f in uploaded_files))
+
+    # 1. Per-document summaries
+    for f in uploaded_files:
+        k = file_key(f)
+        if force or k not in st.session_state["summaries"]:
+            try:
+                with st.spinner(f"Analyzing {f.name}..."):
+                    summary_text = "".join(list(analysis.stream_document_summary(client, f.name, f.getvalue())))
+                    st.session_state["summaries"][k] = summary_text
+            except APIError as e:
+                st.error(f"Analysis failed for {f.name}: {e}")
+
+    # 2. Consolidated summary overview pass
+    if force or ov_key not in st.session_state["overview"]:
+        try:
+            with st.spinner("Generating briefing overview..."):
+                ov_text = "".join(list(analysis.stream_case_overview(client, doc_tuples)))
+                st.session_state["overview"][ov_key] = ov_text
+        except APIError as e:
+            st.error(f"Overview generation failed: {e}")
+
+    # 3. Generate Timeline
+    if force or "timeline" not in st.session_state or st.session_state.get("last_ov_key") != ov_key:
+        try:
+            with st.spinner("Building case timeline..."):
+                tl_text = "".join(list(analysis.stream_case_timeline(client, doc_tuples)))
+                st.session_state["timeline"] = tl_text
+        except APIError as e:
+            st.error(f"Timeline generation failed: {e}")
+
+    st.session_state["last_ov_key"] = ov_key
+
+
 # ---------- App Main Layout ----------
 
 def main() -> None:
@@ -129,37 +166,12 @@ def main() -> None:
 
     client = analysis.get_client()
 
-    # Trigger Batch Analysis
-    if run:
-        # 1. Per-document summaries
-        for f in uploaded_files:
-            k = file_key(f)
-            if k not in st.session_state["summaries"]:
-                try:
-                    with st.spinner(f"Analyzing {f.name}..."):
-                        summary_text = "".join(list(analysis.stream_document_summary(client, f.name, f.getvalue())))
-                        st.session_state["summaries"][k] = summary_text
-                except APIError as e:
-                    st.error(f"Analysis failed for {f.name}: {e}")
-
-        # 2. Consolidated summary overview pass
-        ov_key = "|".join(sorted(file_key(f) for f in uploaded_files))
-        if ov_key not in st.session_state["overview"]:
-            try:
-                with st.spinner("Generating briefing overview..."):
-                    doc_tuples = [(f.name, f.getvalue()) for f in uploaded_files]
-                    ov_text = "".join(list(analysis.stream_case_overview(client, doc_tuples)))
-                    st.session_state["overview"][ov_key] = ov_text
-            except APIError as e:
-                st.error(f"Overview generation failed: {e}")
-
-        # 3. Generate Timeline
-        try:
-            with st.spinner("Building case timeline..."):
-                tl_text = "".join(list(analysis.stream_case_timeline(client, doc_tuples)))
-                st.session_state["timeline"] = tl_text
-        except APIError as e:
-            st.error(f"Timeline generation failed: {e}")
+    # Determine batch document key to check if files changed
+    ov_key = "|".join(sorted(file_key(f) for f in uploaded_files))
+    
+    # Auto-analyze if new files are uploaded, or force re-analysis if user clicked button
+    if run or st.session_state.get("last_ov_key") != ov_key:
+        run_analysis(uploaded_files, client, force=run)
 
     # ---------- Main Two-Column Figma Layout ----------
     left_col, right_col = st.columns([2.2, 1.1])
@@ -183,7 +195,6 @@ def main() -> None:
             )
 
             # Briefing Content
-            ov_key = "|".join(sorted(file_key(f) for f in uploaded_files))
             if ov_key in st.session_state["overview"]:
                 st.markdown(st.session_state["overview"][ov_key])
                 st.markdown('</div>', unsafe_allow_html=True)

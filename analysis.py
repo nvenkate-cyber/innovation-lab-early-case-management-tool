@@ -49,10 +49,10 @@ Do NOT include recommendations, suggested questions, or judicial attention topic
 
 Use this structure:
 
-### **Summary**
+**Summary**
 A concise overview (3-5 sentences) summarizing the parties, nature of the suit, primary claims, defenses, and current procedural posture.
 
-### **Key Facts & Claims by Party**
+**Key Facts & Claims by Party**
 Bullet points summarizing plaintiff allegations and defendant position/defenses with page/paragraph citations.
 
 Write concisely and professionally for a federal district judge. Ensure every factual claim includes a precise document citation (e.g., Doc. 10, p. 2 ¶ 3)."""
