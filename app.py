@@ -95,14 +95,10 @@ def main() -> None:
     st.session_state.setdefault("summaries", {})
     st.session_state.setdefault("overview", {})
 
-    # Top Navigation Breadcrumb
-    st.markdown('<div class="crumb-bar">⚖️ Case management / Cases / <b>Anderson v. K9s</b> / Conference prep</div>', unsafe_allow_html=True)
-
     # Header Row
     col_header, col_btn = st.columns([4, 1])
     with col_header:
         st.title("Early Case Management Conference Prep")
-        st.caption("Alyssa Anderson v. K9s for Warriors · 5:24-cv-00299-XR · W.D. Texas, San Antonio Division")
 
     with col_btn:
         st.markdown("<br>", unsafe_allow_html=True)
