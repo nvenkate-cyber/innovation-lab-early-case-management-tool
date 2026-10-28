@@ -285,38 +285,7 @@ def main() -> None:
             )
 
             if "damages" in st.session_state and st.session_state["damages"]:
-                damages_text = st.session_state["damages"]
-
-                # Clean up any escaped/inline row separators into true line breaks
-                damages_text = damages_text.replace("||", "\n").replace("| |", "\n|")
-
-                # Extract and isolate table portion to wrap inside a scrollable div
-                if "|" in damages_text:
-                    parts = damages_text.split("|", 1)
-                    before_table = parts[0].strip()
-                    table_and_after = "|" + parts[1]
-
-                    if "\n**Notes" in table_and_after or "\n\n**" in table_and_after:
-                        split_key = "\n**" if "\n**" in table_and_after else "\n\n**"
-                        sub_parts = table_and_after.split(split_key, 1)
-                        table_portion = sub_parts[0].strip()
-                        after_table = split_key + sub_parts[1]
-                    else:
-                        table_portion = table_and_after.strip()
-                        after_table = ""
-
-                    if before_table:
-                        st.markdown(before_table)
-
-                    st.markdown(
-                        f'<div style="overflow-x: auto; width: 100%;">{table_portion}</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                    if after_table:
-                        st.markdown(after_table)
-                else:
-                    st.markdown(damages_text)
+                st.markdown(st.session_state["damages"], unsafe_allow_html=True)
             else:
                 st.info("Click **✨ Analyze documents** to calculate potential damages.")
 

@@ -26,12 +26,12 @@ except ImportError:
 MODEL = "gemini-3.5-flash-lite"
 MAX_TOKENS = 3000
 
-SYSTEM_PROMPT = """You are an assistant helping Judge Xavier Rodriguez prepare for an early case management conference. You read case documents and produce concise, neutral, well-organized summaries.
-
-Rules:
-- Use only what is in the documents. Do not invent facts, dates, parties, or citations.
-- Cite document names and specific page/paragraph numbers where possible.
-- If something is unclear, missing, or inconsistent, say so plainly.
+SYSTEM_PROMPT = """You are an assistant helping Judge Xavier Rodriguez prepare for an early case management conference. Judge Rodriguez has a strong legal background and does not need exhaustive overviews of your reasoning; focus on accuracy and conciseness throughout your summary. Provide only the information that someone with a strong legal background would need to understand your recommendations and analysis. You read case documents and produce concise, neutral, well-organized summaries. 
+ 
+Rules: 
+- Use only what is in the documents. Do not invent facts, dates, parties, or citations. 
+- Cite document names and specific page/paragraph numbers where possible. 
+- If something is unclear, missing, or inconsistent, say so plainly. 
 - Stay completely neutral between the parties."""
 
 DOC_SUMMARY_PROMPT = """Summarize this document for a judge preparing for an early \
@@ -165,29 +165,53 @@ General Rules:
 
 Goal: Identify the most promising issues from Common_Questions.xlsx that the judge could address early to facilitate dismissal, judgment, settlement, or narrowing of the lawsuit."""
 
-DAMAGES_PROMPT = """Calculate potential damages from the uploaded lawsuit documents, using Damages_Equations.xlsx as a formula reference—not conclusive legal authority.  
+DAMAGES_PROMPT = """Calculate potential damages from the uploaded lawsuit documents, using the provided Damages_Equations.xlsx dataset as a formula reference—not conclusive legal authority.  
 
 Rules & Procedure:
 1. Identify the relevant Case Type and matched formula(s) from Damages_Equations.xlsx corresponding to the claims asserted in the case documents.
 2. Establish applicability: Identify claims, jurisdiction, relevant dates, and potentially available remedies. Flag uncertain legal prerequisites or ambiguous formulas for attorney review. Do not assume liability, treat demanded amounts as proven losses, or automatically apply maximum awards or multipliers.
 3. Ground every input: Distinguish allegations, estimates, and established facts. Derive values only through transparent arithmetic from documented inputs; never invent values.
-4. Handle missing information: Never substitute zero for an unknown. If an essential input is missing or unreadable, state “Not determinable from provided documents,” identify the missing input and evidence needed, and show the formula symbolically using plain standard text (DO NOT use LaTeX formulas).
-5. Table Formatting Rules (STRICT):
-   - EVERY ROW OF THE TABLE MUST BE ON ITS OWN NEW LINE. DO NOT USE `||` TO SEPARATE ROWS.
-   - DO NOT put pipe characters `|` inside cell text. Use commas or semicolons instead.
-   - DO NOT use HTML tags like <br> anywhere in the output.
-   - Keep table cells short and concise. Put detailed defense notes or legal citations in a bulleted list BELOW the table.
+4. Handle missing information: Never substitute zero for an unknown. If an essential input is missing or unreadable, state “Not determinable from provided documents,” identify the missing input and evidence needed, and show the formula symbolically using plain standard text (DO NOT use LaTeX formulas like \\P_{lw}). Calculate supported components separately, labeling any subtotal incomplete, not total damages.
+5. STRICT HTML TABLE FORMATTING REQUIREMENTS:
+   - Output the table using CLEAN, VALID HTML (`<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, `<td>`). DO NOT use Markdown pipe `|` table syntax.
+   - Wrap the entire table in `<div style="overflow-x: auto; width: 100%;">...</div>` for horizontal scrollability.
+   - Use standard CSS inline styling for the table: `<table style="width:100%; border-collapse: collapse; min-width: 800px;">`.
+   - Style headers with `background-color: #f8f9fa; text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6;`.
+   - Style cells with `padding: 8px 12px; border-bottom: 1px solid #dee2e6; vertical-align: top;`.
+   - Place extensive defense notes or legal citations in standard HTML bullet points (`<ul><li>...</li></ul>`) below the table.
 
-Output Structure:
+Output Format:
 
-| Claim / Remedy | Formula | Inputs & Sources | Arithmetic / Result | Missing Info & Limitations |
-| :--- | :--- | :--- | :--- | :--- |
-| Claim 1 | Formula 1 | Inputs 1 | Result 1 | Limitations 1 |
+<div style="overflow-x: auto; width: 100%;">
+  <table style="width:100%; border-collapse: collapse; min-width: 800px;">
+    <thead>
+      <tr>
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Claim / Remedy</th>
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Formula</th>
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Inputs & Sources</th>
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Arithmetic / Result</th>
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Missing Info & Limitations</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;"><b>Claim Name</b></td>
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Formula text</td>
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Inputs & Sources</td>
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Result text</td>
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Limitations</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 
-**Notes, Defenses & Limitations**
-- Currency, units, and calculation period.
-- Supported subtotals (clearly labeled if incomplete due to missing inputs).
-- Detailed party positions, defenses, and citations in bullet points."""
+<br>
+<h4>Notes, Defenses & Limitations</h4>
+<ul>
+  <li><b>Currency & Period:</b> Details here...</li>
+  <li><b>Supported Subtotals:</b> Details here...</li>
+  <li><b>Defenses & Positions:</b> Details here...</li>
+</ul>"""
 
 
 # ---------- Building model input from uploaded files ----------
