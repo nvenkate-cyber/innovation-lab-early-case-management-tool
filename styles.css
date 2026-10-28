@@ -125,3 +125,35 @@
     animation: highlight-pulse-anim 2.5s ease-in-out forwards;
     border-radius: 6px;
 }
+
+/* Enable horizontal scrolling for markdown tables */
+.element-container:has(table),
+div[data-testid="stMarkdownContainer"] {
+    overflow-x: auto !important;
+}
+
+table {
+    min-width: 900px !important;
+    /* Forces full table width so columns don't compress */
+    width: 100% !important;
+    border-collapse: collapse !important;
+    display: table !important;
+}
+
+th,
+td {
+    white-space: normal !important;
+    word-break: normal !important;
+    padding: 10px 14px !important;
+    vertical-align: top !important;
+    min-width: 160px !important;
+    /* Prevents text columns from shrinking below 160px */
+}
+
+/* Ensure images, blockquotes, and LaTeX stay bounded */
+td div,
+td p,
+td ul {
+    max-width: 100% !important;
+    margin: 0 !important;
+}

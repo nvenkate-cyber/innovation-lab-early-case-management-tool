@@ -6,6 +6,7 @@ Redesigned Streamlit interface matching Figma blueprint layout with top-level ta
 - Case timeline
 - Discovery
 - Conference questions
+- Damages
 """
 
 import base64
@@ -22,7 +23,7 @@ try:
 except ImportError:
     Document = None
 
-SUPPORTED_TYPES = ["pdf", "docx", "txt", "md", "png", "jpg", "jpeg"]
+SUPPORTED_TYPES = ["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "xlsx", "xls"]
 
 
 # ---------- Helper to load external CSS ----------
@@ -73,6 +74,8 @@ def render_document(uploaded_file, key: str) -> None:
         st.text_area("Document text", data.decode("utf-8", errors="replace"), height=350, key=f"txt_{key}")
     elif ext in ("png", "jpg", "jpeg"):
         st.image(data, use_container_width=True)
+    elif ext in ("xlsx", "xls"):
+        st.caption("Spreadsheet file reference used for analytical formula/question extraction.")
 
 
 def file_key(f) -> str:
@@ -80,12 +83,29 @@ def file_key(f) -> str:
 
 
 def run_analysis(uploaded_files, client, force: bool = False) -> None:
-    """Runs document summaries, briefing overview, and timeline extraction."""
-    doc_tuples = [(f.name, f.getvalue()) for f in uploaded_files]
+    """Runs document summaries, briefing overview, timeline extraction, discovery plan, conference questions, and damages calculations."""
+    questions_excel_bytes = None
+    damages_excel_bytes = None
+    case_docs = []
+
+    for f in uploaded_files:
+        ext = f.name.rsplit(".", 1)[-1].lower()
+        if ext in ("xlsx", "xls"):
+            lower_name = f.name.lower()
+            if "damages" in lower_name:
+                damages_excel_bytes = f.getvalue()
+            elif "common_questions" in lower_name or "questions" in lower_name:
+                questions_excel_bytes = f.getvalue()
+            else:
+                questions_excel_bytes = f.getvalue()
+        else:
+            case_docs.append(f)
+
+    doc_tuples = [(f.name, f.getvalue()) for f in case_docs]
     ov_key = "|".join(sorted(file_key(f) for f in uploaded_files))
 
     # 1. Per-document summaries
-    for f in uploaded_files:
+    for f in case_docs:
         k = file_key(f)
         if force or k not in st.session_state["summaries"]:
             try:
@@ -113,6 +133,33 @@ def run_analysis(uploaded_files, client, force: bool = False) -> None:
         except APIError as e:
             st.error(f"Timeline generation failed: {e}")
 
+    # 4. Generate Discovery Analysis
+    if force or "discovery" not in st.session_state or st.session_state.get("last_ov_key") != ov_key:
+        try:
+            with st.spinner("Analyzing proposed discovery & building tiered discovery plan..."):
+                disc_text = "".join(list(analysis.stream_discovery_analysis(client, doc_tuples)))
+                st.session_state["discovery"] = disc_text
+        except APIError as e:
+            st.error(f"Discovery analysis failed: {e}")
+
+    # 5. Generate Conference Questions Analysis
+    if force or "conference_questions" not in st.session_state or st.session_state.get("last_ov_key") != ov_key:
+        try:
+            with st.spinner("Evaluating early resolution questions from Common_Questions.xlsx..."):
+                cq_text = "".join(list(analysis.stream_conference_questions(client, doc_tuples, excel_bytes=questions_excel_bytes)))
+                st.session_state["conference_questions"] = cq_text
+        except APIError as e:
+            st.error(f"Conference questions analysis failed: {e}")
+
+    # 6. Generate Damages Analysis
+    if force or "damages" not in st.session_state or st.session_state.get("last_ov_key") != ov_key:
+        try:
+            with st.spinner("Calculating grounded potential damages using Damages_Equations.xlsx..."):
+                dam_text = "".join(list(analysis.stream_damages_analysis(client, doc_tuples, damages_excel_bytes=damages_excel_bytes)))
+                st.session_state["damages"] = dam_text
+        except APIError as e:
+            st.error(f"Damages analysis failed: {e}")
+
     st.session_state["last_ov_key"] = ov_key
 
 
@@ -120,11 +167,8 @@ def run_analysis(uploaded_files, client, force: bool = False) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="Case Management Prep", page_icon="⚖️", layout="wide")
-    
-    # Load stylesheet from styles.css
     load_css("styles.css")
 
-    # API Key Validation
     if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
         st.error("GEMINI_API_KEY or GOOGLE_API_KEY is not set. Set it in your environment and restart the app.")
         st.stop()
@@ -132,7 +176,6 @@ def main() -> None:
     st.session_state.setdefault("summaries", {})
     st.session_state.setdefault("overview", {})
 
-    # Header Row
     col_header, col_btn = st.columns([4, 1])
     with col_header:
         st.title("Early Case Management Conference Prep")
@@ -141,7 +184,6 @@ def main() -> None:
         st.markdown("<br>", unsafe_allow_html=True)
         run = st.button("✨ Analyze documents", type="primary", use_container_width=True)
 
-    # Disclaimer Banner
     st.markdown(
         '<div class="disclaimer-banner">'
         '⚠️ <b>AI-generated analysis may contain errors.</b> Verify against the source documents. Items listed are for consideration, not legal conclusions.'
@@ -149,9 +191,8 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # Main File Uploader
     uploaded_files = st.file_uploader(
-        "Upload case documents",
+        "Upload case documents & spreadsheets (Common_Questions.xlsx, Damages_Equations.xlsx)",
         type=SUPPORTED_TYPES,
         accept_multiple_files=True,
         label_visibility="collapsed" if st.session_state.get("files_uploaded") else "visible",
@@ -165,24 +206,20 @@ def main() -> None:
         return
 
     client = analysis.get_client()
-
-    # Determine batch document key to check if files changed
     ov_key = "|".join(sorted(file_key(f) for f in uploaded_files))
-    
-    # Auto-analyze if new files are uploaded, or force re-analysis if user clicked button
+
     if run or st.session_state.get("last_ov_key") != ov_key:
         run_analysis(uploaded_files, client, force=run)
 
-    # ---------- Main Two-Column Figma Layout ----------
     left_col, right_col = st.columns([2.2, 1.1])
 
-    # ===== LEFT COLUMN: Main Analysis Tabs =====
     with left_col:
-        tab_summary, tab_timeline, tab_discovery, tab_questions = st.tabs([
+        tab_summary, tab_timeline, tab_discovery, tab_questions, tab_damages = st.tabs([
             "Summary",
             "Case timeline",
             "Discovery",
             "Conference questions",
+            "Damages",
         ])
 
         # --- TAB 1: SUMMARY ---
@@ -194,10 +231,8 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
 
-            # Briefing Content
             if ov_key in st.session_state["overview"]:
                 st.markdown(st.session_state["overview"][ov_key])
-                st.markdown('</div>', unsafe_allow_html=True)
             else:
                 st.info("Click **✨ Analyze documents** to generate the case snapshot briefing.")
 
@@ -215,55 +250,80 @@ def main() -> None:
         # --- TAB 3: DISCOVERY ---
         with tab_discovery:
             st.markdown('<div class="card-label">DISCOVERY</div>', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Discovery posture & preparation</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">Discovery Posture & Tiered Plan</div>', unsafe_allow_html=True)
             st.markdown(
-                '<p class="card-subtitle">What the parties reported, what they proposed, and what to confirm before the conference.</p>',
+                '<p class="card-subtitle">A 3-tiered discovery plan designed to achieve early factual resolution while narrowing requested depositions and document productions.</p>',
                 unsafe_allow_html=True,
             )
 
-            st.markdown(
-                """
-                <div class="figma-card">
-                    <b>Reported in Joint Rule 26(f) Report</b>
-                    <br><br>
-                    <b>ESI & Privilege:</b> No initial ESI or Rule 502 disputes reported.<br>
-                    <b>Discovery Limits:</b> Parties requested no departure from standard limits.<br>
-                    <span class="cite-tag">📄 Doc. 10 - pp. 2-3, ¶¶ 5-8</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            if "discovery" in st.session_state and st.session_state["discovery"]:
+                st.markdown(st.session_state["discovery"])
+            else:
+                st.info("Click **✨ Analyze documents** to generate the discovery analysis.")
 
         # --- TAB 4: CONFERENCE QUESTIONS ---
         with tab_questions:
             st.markdown('<div class="card-label">CONFERENCE QUESTIONS</div>', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Possible questions to prepare for</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">Early Resolution Report</div>', unsafe_allow_html=True)
             st.markdown(
-                '<p class="card-subtitle">A condensed, source-linked agenda for counsel and judicial preparation.</p>',
+                '<p class="card-subtitle">Evaluated questions from Common_Questions.xlsx to identify potential early dismissal, judgment, settlement, or narrowing issues.</p>',
                 unsafe_allow_html=True,
             )
 
+            if "conference_questions" in st.session_state and st.session_state["conference_questions"]:
+                st.markdown(st.session_state["conference_questions"])
+            else:
+                st.info("Click **✨ Analyze documents** to generate the early resolution questions analysis.")
+
+        # --- TAB 5: DAMAGES ---
+        with tab_damages:
+            st.markdown('<div class="card-label">DAMAGES</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title">Potential Damages & Remedy Breakdown</div>', unsafe_allow_html=True)
             st.markdown(
-                """
-                <div class="figma-card">
-                    ❓ <b>Jurisdiction & Service</b><br>
-                    Do jurisdiction and service remain undisputed, with no unserved parties?<br>
-                    <span class="cite-tag">📄 Doc. 10 - pp. 1-2, ¶¶ 1-2</span>
-                    <hr>
-                    ❓ <b>Governing Dates & Mediation</b><br>
-                    Was the proposed October 22, 2024 cutoff adopted or amended?<br>
-                    <span class="cite-tag">📄 Doc. 10 - p. 2, ¶ 5</span>
-                </div>
-                """,
+                '<p class="card-subtitle">Grounded damages calculations referencing Damages_Equations.xlsx formulas and documented case inputs.</p>',
                 unsafe_allow_html=True,
             )
 
-    # ===== RIGHT COLUMN: Sidebar Document Inspector =====
+            if "damages" in st.session_state and st.session_state["damages"]:
+                damages_text = st.session_state["damages"]
+
+                # Clean up any escaped/inline row separators into true line breaks
+                damages_text = damages_text.replace("||", "\n").replace("| |", "\n|")
+
+                # Extract and isolate table portion to wrap inside a scrollable div
+                if "|" in damages_text:
+                    parts = damages_text.split("|", 1)
+                    before_table = parts[0].strip()
+                    table_and_after = "|" + parts[1]
+
+                    if "\n**Notes" in table_and_after or "\n\n**" in table_and_after:
+                        split_key = "\n**" if "\n**" in table_and_after else "\n\n**"
+                        sub_parts = table_and_after.split(split_key, 1)
+                        table_portion = sub_parts[0].strip()
+                        after_table = split_key + sub_parts[1]
+                    else:
+                        table_portion = table_and_after.strip()
+                        after_table = ""
+
+                    if before_table:
+                        st.markdown(before_table)
+
+                    st.markdown(
+                        f'<div style="overflow-x: auto; width: 100%;">{table_portion}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    if after_table:
+                        st.markdown(after_table)
+                else:
+                    st.markdown(damages_text)
+            else:
+                st.info("Click **✨ Analyze documents** to calculate potential damages.")
+
     with right_col:
         st.subheader("Case documents")
         st.caption(f"{len(uploaded_files)} uploaded")
 
-        # Select file to view
         selected_file_name = st.selectbox(
             "Select document to inspect:",
             options=[f.name for f in uploaded_files],
@@ -275,7 +335,6 @@ def main() -> None:
 
         st.divider()
 
-        # Document Summary View
         st.markdown(f"**Selected:** `{selected_file.name}`")
 
         if selected_key in st.session_state["summaries"]:
@@ -284,7 +343,6 @@ def main() -> None:
         else:
             st.info("Run analysis to view this document's summary.")
 
-        # Document Viewer Block
         st.markdown("**Original document preview**")
         render_document(selected_file, selected_key)
 

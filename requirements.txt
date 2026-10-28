@@ -1,4 +1,6 @@
-streamlit>=1.30.0
-google-genai>=0.1.0
-python-docx>=1.0.0
-tenacity>=8.2.0
+google-genai
+streamlit
+pandas
+openpyxl
+python-docx
+tenacity
