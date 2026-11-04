@@ -832,3 +832,136 @@ td ul {
         display: none;
     }
 }
+
+/* ===== Final overrides: remove remaining Streamlit default red (version-agnostic selectors) ===== */
+
+/* Tabs: text and underline */
+button[role="tab"],
+button[role="tab"] p,
+button[role="tab"] div {
+    color: #334155 !important;
+}
+
+button[role="tab"]:hover,
+button[role="tab"]:hover p,
+button[role="tab"][aria-selected="true"],
+button[role="tab"][aria-selected="true"] p,
+button[role="tab"][aria-selected="true"] div {
+    color: #1d4ed8 !important;
+}
+
+[data-baseweb="tab-highlight"],
+div[data-baseweb="tab-highlight"],
+[role="tablist"] [data-baseweb="tab-highlight"],
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    background-color: #2563eb !important;
+}
+
+[data-baseweb="tab-border"],
+div[data-baseweb="tab-border"] {
+    background-color: #dbeafe !important;
+}
+
+/* Radio lists (document list + timeline filter): hide every control child except the text, so no dot is drawn */
+.st-key-selected_doc div[role="radiogroup"],
+.st-key-tl_filter div[role="radiogroup"] {
+    align-items: stretch;
+}
+
+.st-key-selected_doc div[role="radiogroup"]>label {
+    align-self: stretch !important;
+    width: 100% !important;
+    box-sizing: border-box;
+}
+
+.st-key-selected_doc div[role="radiogroup"]>label>*:not(:last-child),
+.st-key-tl_filter div[role="radiogroup"]>label>*:not(:last-child) {
+    display: none !important;
+}
+
+.st-key-selected_doc div[role="radiogroup"]>label:has(input:checked) {
+    background-color: #eff6ff !important;
+    border: 1.5px solid #2563eb !important;
+}
+
+.st-key-tl_filter div[role="radiogroup"]>label:has(input:checked) {
+    background-color: #dbeafe !important;
+    border-color: #bfdbfe !important;
+}
+
+/* Any radio/checkbox dot or check that still shows: blue */
+input[type="radio"],
+input[type="checkbox"] {
+    accent-color: #2563eb !important;
+}
+
+/* ===== Pre-Upload & File Uploader Specific Styling (Overriding Streamlit Default Red) ===== */
+
+/* File uploader drag & drop zone idle and active hover/drag states */
+div[data-testid="stFileUploaderDropzone"] {
+    background-color: #ffffff !important;
+    border: 1.5px dashed #93c5fd !important;
+    border-radius: 8px !important;
+}
+
+div[data-testid="stFileUploaderDropzone"]:hover,
+div[data-testid="stFileUploaderDropzone"]:focus,
+div[data-testid="stFileUploaderDropzone"][data-focused="true"] {
+    border-color: #2563eb !important;
+    background-color: #eff6ff !important;
+    box-shadow: 0 0 0 1px #2563eb !important;
+}
+
+/* Browse files button inside uploader */
+div[data-testid="stFileUploader"] button,
+div[data-testid="stFileUploaderDeleteBtn"] button,
+button[data-testid="stBaseButton-secondary"] {
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+    background-color: #ffffff !important;
+    border-radius: 8px !important;
+}
+
+div[data-testid="stFileUploader"] button:hover,
+div[data-testid="stFileUploader"] button:focus,
+div[data-testid="stFileUploader"] button:active,
+button[data-testid="stBaseButton-secondary"]:hover,
+button[data-testid="stBaseButton-secondary"]:focus,
+button[data-testid="stBaseButton-secondary"]:active {
+    border-color: #2563eb !important;
+    color: #2563eb !important;
+    background-color: #eff6ff !important;
+    box-shadow: 0 0 0 1px #2563eb !important;
+}
+
+/* File uploader icon & upload text */
+div[data-testid="stFileUploader"] section svg,
+div[data-testid="stFileUploader"] [data-testid="stMarkdownContainer"] svg {
+    fill: #2563eb !important;
+    color: #2563eb !important;
+}
+
+/* Alert boxes (st.info, st.warning) icon and borders before upload */
+div[data-testid="stAlert"] {
+    border-radius: 8px !important;
+}
+
+div[data-testid="stAlert"]>div {
+    color: #1e40af !important;
+}
+
+div[data-testid="stAlert"] svg {
+    fill: #2563eb !important;
+    color: #2563eb !important;
+}
+
+/* Any interactive control focus ring across all Streamlit states */
+*:focus-visible {
+    outline-color: #2563eb !important;
+}
+
+[data-baseweb="button"]:focus,
+[data-baseweb="button"]:active {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 1px #2563eb !important;
+}

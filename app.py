@@ -518,7 +518,27 @@ def run_analysis(uploaded_files, client, force: bool = False) -> None:
 
 # ---------- App Main Layout ----------
 
+def apply_blue_theme() -> None:
+    """Fallback for when .streamlit/config.toml isn't picked up: set the theme colors at runtime.
+
+    Takes effect for new browser sessions, so reload the page once after the first run.
+    """
+    try:
+        from streamlit import config
+
+        for key, value in {
+            "primaryColor": "#2563eb",
+            "backgroundColor": "#f8fafc",
+            "secondaryBackgroundColor": "#eff6ff",
+            "textColor": "#0f172a",
+        }.items():
+            config.set_option(f"theme.{key}", value)
+    except Exception:
+        pass
+
+
 def main() -> None:
+    apply_blue_theme()
     st.set_page_config(page_title="Case Management Prep", page_icon="⚖️", layout="wide")
     load_css("styles.css")
 
