@@ -169,52 +169,50 @@ General Rules:
 
 Goal: Identify the most promising issues from Common_Questions.xlsx that the judge could address early to facilitate dismissal, judgment, settlement, or narrowing of the lawsuit."""
 
-DAMAGES_PROMPT = """Calculate potential damages from the uploaded lawsuit documents, using the provided Damages_Equations.xlsx dataset as a formula reference—not conclusive legal authority.  
+DAMAGES_PROMPT = """Rules & Procedure: 
+1. Identify the relevant Case Type and matched formula(s) from Damages_Equations.xlsx corresponding to the claims asserted in the case documents. 
+2. Establish applicability: Identify claims, jurisdiction, relevant dates, and potentially available remedies. Flag uncertain legal prerequisites or ambiguous formulas for attorney review. Do not assume liability, treat demanded amounts as proven losses, or automatically apply maximum awards or multipliers. 
+3. Ground every input: Distinguish allegations, estimates, and established facts. Derive values only through transparent arithmetic from documented inputs; never invent values. 
+4. Handle missing information: Never substitute zero for an unknown. If an essential input is missing or unreadable, state “Not determinable from provided documents,” identify the missing input and evidence needed, and show the formula symbolically using plain standard text (DO NOT use LaTeX formulas like \\P_{lw}). Calculate supported components separately, labeling any subtotal incomplete, not total damages. 
+5. Display the predicted damages, in a format such as: Compensatory Damages: Estimated ~$10,000 for each type of damages. Then prepare a table as described in 6. 
+6. STRICT HTML TABLE FORMATTING REQUIREMENTS: 
+- Output the table using CLEAN, VALID HTML (`<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, `<td>`). DO NOT use Markdown pipe `|` table syntax. 
+- Wrap the entire table in `<div style="overflow-x: auto; width: 100%;">...</div>` for horizontal scrollability. 
+- Use standard CSS inline styling for the table: `<table style="width:100%; border-collapse: collapse; min-width: 800px;">`. 
+- Style headers with `background-color: #f8f9fa; text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6;`. 
+- Style cells with `padding: 8px 12px; border-bottom: 1px solid #dee2e6; vertical-align: top;`. 
+- Place extensive defense notes or legal citations in standard HTML bullet points (`<ul><li>...</li></ul>`) below the table. 
 
-Rules & Procedure:
-1. Identify the relevant Case Type and matched formula(s) from Damages_Equations.xlsx corresponding to the claims asserted in the case documents.
-2. Establish applicability: Identify claims, jurisdiction, relevant dates, and potentially available remedies. Flag uncertain legal prerequisites or ambiguous formulas for attorney review. Do not assume liability, treat demanded amounts as proven losses, or automatically apply maximum awards or multipliers.
-3. Ground every input: Distinguish allegations, estimates, and established facts. Derive values only through transparent arithmetic from documented inputs; never invent values.
-4. Handle missing information: Never substitute zero for an unknown. If an essential input is missing or unreadable, state “Not determinable from provided documents,” identify the missing input and evidence needed, and show the formula symbolically using plain standard text (DO NOT use LaTeX formulas like \\P_{lw}). Calculate supported components separately, labeling any subtotal incomplete, not total damages.
-5. STRICT HTML TABLE FORMATTING REQUIREMENTS:
-   - Output the table using CLEAN, VALID HTML (`<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, `<td>`). DO NOT use Markdown pipe `|` table syntax.
-   - Wrap the entire table in `<div style="overflow-x: auto; width: 100%;">...</div>` for horizontal scrollability.
-   - Use standard CSS inline styling for the table: `<table style="width:100%; border-collapse: collapse; min-width: 800px;">`.
-   - Style headers with `background-color: #f8f9fa; text-align: left; padding: 8px 12px; border-bottom: 2px solid #dee2e6;`.
-   - Style cells with `padding: 8px 12px; border-bottom: 1px solid #dee2e6; vertical-align: top;`.
-   - Place extensive defense notes or legal citations in standard HTML bullet points (`<ul><li>...</li></ul>`) below the table.
+Output Format: 
 
-Output Format:
-
-<div style="overflow-x: auto; width: 100%;">
-  <table style="width:100%; border-collapse: collapse; min-width: 800px;">
-    <thead>
-      <tr>
-        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Claim / Remedy</th>
-        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Formula</th>
-        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Inputs & Sources</th>
-        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Arithmetic / Result</th>
-        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Missing Info & Limitations</th>
+<div style="overflow-x: auto; width: 100%;"> 
+  <table style="width:100%; border-collapse: collapse; min-width: 800px;"> 
+    <thead> 
+      <tr> 
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Claim / Remedy</th> 
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Formula</th> 
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Inputs & Sources</th> 
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Arithmetic / Result</th> 
+        <th style="background-color: #f8f9fa; text-align: left; padding: 10px; border-bottom: 2px solid #dee2e6;">Missing Info & Limitations</th> 
+      </tr> 
+    </thead> 
+    <tbody> 
+      <tr> 
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;"><b>Claim Name</b></td> 
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Formula text</td> 
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Inputs & Sources</td> 
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Result text</td> 
+        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Limitations</td> 
       </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;"><b>Claim Name</b></td>
-        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Formula text</td>
-        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Inputs & Sources</td>
-        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Result text</td>
-        <td style="padding: 10px; border-bottom: 1px solid #dee2e6; vertical-align: top;">Limitations</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
-<br>
-<h4>Notes, Defenses & Limitations</h4>
-<ul>
-  <li><b>Currency & Period:</b> Details here...</li>
-  <li><b>Supported Subtotals:</b> Details here...</li>
-  <li><b>Defenses & Positions:</b> Details here...</li>
+    </tbody> 
+  </table> 
+</div> 
+<br> 
+<h4>Notes, Defenses & Limitations</h4> 
+<ul> 
+  <li><b>Currency & Period:</b> Details here...</li> 
+  <li><b>Supported Subtotals:</b> Details here...</li> 
+  <li><b>Defenses & Positions:</b> Details here...</li> 
 </ul>"""
 
 
