@@ -164,6 +164,8 @@ General Rules:
 - Do not assume that an unanswered question establishes a legal defect. 
 - Focus on practical opportunities for early resolution, not every possible legal issue. 
 - If no questions present realistic opportunities for early resolution, say so. 
+- Do not list any excluded questions. 
+- Do not write in any subtitle or other text that you are using the Common_Questions.xlsx file. 
 
 Goal: Identify the most promising issues from Common_Questions.xlsx that the judge could address early to facilitate dismissal, judgment, settlement, or narrowing of the lawsuit."""
 
