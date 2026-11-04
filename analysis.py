@@ -9,14 +9,16 @@ Set your key: export GEMINI_API_KEY="AIzaSy..."
 """
 
 import io
+import json
 import os
+import re
 from typing import Iterator, Optional
 
 import pandas as pd
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt
 
 try:
     from docx import Document
@@ -24,13 +26,13 @@ except ImportError:
     Document = None
 
 MODEL = "gemini-3.5-flash-lite"
-MAX_TOKENS = 3000
+MAX_TOKENS = 16000
 
 SYSTEM_PROMPT = """You are an assistant helping Judge Xavier Rodriguez prepare for an early case management conference. Judge Rodriguez has a strong legal background and does not need exhaustive overviews of your reasoning; focus on accuracy and conciseness throughout your summary. Provide only the information that someone with a strong legal background would need to understand your recommendations and analysis. You read case documents and produce concise, neutral, well-organized summaries. 
  
 Rules: 
 - Use only what is in the documents. Do not invent facts, dates, parties, or citations. 
-- Cite document names and specific page/paragraph numbers where possible. 
+- Cite document names and specific page/paragraph numbers where possible. When citing a document, always use its file name exactly as given in its <document name="..."> tag, without the file extension (for example: Anderson v. K9s (Complaint), p. 2, ¶ 5). Never cite by docket, ECF, or document numbers such as "Doc. 10". 
 - If something is unclear, missing, or inconsistent, say so plainly. 
 - Stay completely neutral between the parties."""
 
@@ -57,7 +59,7 @@ A concise overview (3-5 sentences) summarizing the parties, nature of the suit, 
 **Key Facts & Claims by Party**
 Bullet points summarizing plaintiff allegations and defendant position/defenses with page/paragraph citations.
 
-Write concisely and professionally for a federal district judge. Ensure every factual claim includes a precise document citation (e.g., Doc. 10, p. 2 ¶ 3)."""
+Write concisely and professionally for a federal district judge. Ensure every factual claim includes a precise document citation (e.g., [Document Name], p. 2 ¶ 3)."""
 
 TIMELINE_PROMPT = """Extract all significant dates, deadlines, and milestones mentioned across the provided documents and arrange them in strict chronological order.
 
@@ -66,7 +68,7 @@ For each entry, format the output in HTML matching this structure:
 <div class="timeline-item">
     <div class="timeline-date">[Date, e.g., May 23, 2024 or By May 23, 2024]</div>
     <b>[Short Title / Description of Event or Deadline]</b><br>
-    <span class="cite-tag">📄 [Exact Source, e.g., Doc. 10 - p. 2, ¶ 5]</span>
+    <span class="cite-tag">📄 [Document Name - p. 2, ¶ 5]</span>
 </div>
 
 Rules:
@@ -334,6 +336,33 @@ def load_damages_equations(
         return f"<file name='Damages_Equations.xlsx'>Error parsing damages spreadsheet: {e}</file>"
 
 
+# ---------- Retry policy (rate limits / transient errors) ----------
+
+RETRYABLE_CODES = {429, 500, 502, 503, 504}
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    return isinstance(exc, APIError) and getattr(exc, "code", None) in RETRYABLE_CODES
+
+
+def _retry_wait(retry_state) -> float:
+    """Wait however long the API asks us to ("retry in 33s"); otherwise back off exponentially."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    msg = str(exc) if exc else ""
+    m = re.search(r"retry in ([\d.]+)\s*s", msg) or re.search(r"retryDelay'?\"?: ?'?\"?(\d+(?:\.\d+)?)s", msg)
+    if m:
+        return min(float(m.group(1)) + 2, 90)
+    return min(2 ** retry_state.attempt_number, 30)
+
+
+RETRY_POLICY = dict(
+    stop=stop_after_attempt(6),
+    wait=_retry_wait,
+    retry=retry_if_exception(_is_retryable),
+    reraise=True,
+)
+
+
 # ---------- Agent calls ----------
 
 def get_client() -> genai.Client:
@@ -341,18 +370,13 @@ def get_client() -> genai.Client:
     return genai.Client()
 
 
-@retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(APIError),
-    reraise=True,
-)
-def _call_stream(client: genai.Client, contents: list):
+@retry(**RETRY_POLICY)
+def _call_generate(client: genai.Client, contents: list):
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
         max_output_tokens=MAX_TOKENS,
     )
-    return client.models.generate_content_stream(
+    return client.models.generate_content(
         model=MODEL,
         contents=contents,
         config=config,
@@ -360,10 +384,10 @@ def _call_stream(client: genai.Client, contents: list):
 
 
 def _stream(client: genai.Client, contents: list) -> Iterator[str]:
-    response = _call_stream(client, contents)
-    for chunk in response:
-        if chunk.text:
-            yield chunk.text
+    """Kept as an iterator for the callers; the request itself is a single retried call."""
+    response = _call_generate(client, contents)
+    if response.text:
+        yield response.text
 
 
 def stream_document_summary(client: genai.Client, name: str, data: bytes) -> Iterator[str]:
@@ -379,6 +403,121 @@ def stream_case_overview(client: genai.Client, documents: list[tuple[str, bytes]
         contents.extend(build_content(name, data))
     contents.append(OVERVIEW_PROMPT)
     return _stream(client, contents)
+
+
+OVERVIEW_JSON_PROMPT = """Synthesize all provided documents into a structured pre-conference snapshot for Judge Xavier Rodriguez.
+
+Return ONLY a single JSON object (no markdown, no code fences) with exactly this shape:
+
+{
+  "snapshot": "3-5 sentence neutral overview of the parties, nature of the suit, primary claims, defenses, and procedural posture.",
+  "case_identity": {
+    "caption": "Case caption, e.g. Alyssa Anderson v. K9s for Warriors",
+    "case_number": "Case number, e.g. 5:24-cv-00299-XR",
+    "court": "Court and division, e.g. W.D. Texas, San Antonio Division"
+  },
+  "lead_document": {
+    "title": "Most important filing for the conference, e.g. Joint Rule 26(f) Report",
+    "doc_number": "Docket/document number, e.g. Document 10",
+    "filed": "Filing date, e.g. May 23, 2024",
+    "pages": "Page count as a string, e.g. 4 pages"
+  },
+  "plaintiff_allegations": {"text": "Neutral summary of plaintiff's allegations and claims.", "cite": "Document Name, p. 1, ¶ 3"},
+  "defendant_defenses": {"text": "Neutral summary of defendant's position and defenses.", "cite": "Document Name, pp. 1-2, ¶ 3"},
+  "scheduling_posture": [
+    {"title": "Jurisdiction and parties", "text": "...", "cite": "..."},
+    {"title": "Discovery", "text": "...", "cite": "..."},
+    {"title": "Proposed dates", "text": "...", "cite": "..."},
+    {"title": "Open items", "text": "...", "cite": "..."}
+  ]
+}
+
+Rules:
+- Use only what is in the documents. If a value is not in the documents, use "Not stated in provided documents" (never invent).
+- Do NOT include recommendations, suggested questions, or judicial attention topics.
+- Every "cite" must name the document, page, and paragraph where possible (e.g. "Document Name, p. 2, ¶ 3"). Use the document's file name exactly as in its <document name> tag, without the extension; never use docket or "Doc. 10" style numbers. Combine multiple sources in one string.
+- Keep each text field to 1-3 concise sentences for a federal district judge.
+- Stay neutral between the parties."""
+
+
+@retry(**RETRY_POLICY)
+def _generate_json(client: genai.Client, contents: list):
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        max_output_tokens=MAX_TOKENS,
+        response_mime_type="application/json",
+    )
+    return client.models.generate_content(model=MODEL, contents=contents, config=config)
+
+
+def _generate_json_object(client: genai.Client, documents: list[tuple[str, bytes]], prompt: str) -> dict:
+    """Runs a JSON-mode call over all documents and returns the parsed object. Raises ValueError on bad JSON."""
+    contents = []
+    for name, data in documents:
+        contents.extend(build_content(name, data))
+    contents.append(prompt)
+
+    response = _generate_json(client, contents)
+    text = (response.text or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Response was not valid JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError("Response was not a JSON object.")
+    return data
+
+
+def generate_case_overview(client: genai.Client, documents: list[tuple[str, bytes]]) -> dict:
+    """Returns the structured case snapshot used by the Overview tab. Raises ValueError if the output isn't valid JSON."""
+    return _generate_json_object(client, documents, OVERVIEW_JSON_PROMPT)
+
+
+TIMELINE_JSON_PROMPT = """Extract every date, deadline, and sequencing relationship mentioned across the provided documents for Judge Xavier Rodriguez.
+
+Return ONLY a single JSON object (no markdown, no code fences) with exactly this shape:
+
+{
+  "dated_entries": [
+    {
+      "date": "May 23, 2024 or By May 23, 2024",
+      "date_note": "Fixed historical date | Report-stated date | Proposed date",
+      "title": "Short event title, e.g. Joint Rule 26(f) Report filed",
+      "status": "Filed | Scheduled | Proposed | Deadline",
+      "kind": "fixed or proposed",
+      "description": "One sentence on what the date is and where it comes from.",
+      "cite": "Document Name, p. 2, ¶ 5",
+      "doc": "Document Name",
+      "details": "Optional 1-2 sentences of neutral detail, e.g. what the record does and does not establish about this date. Empty string if none.",
+      "suggested_question": "Optional neutral question the judge could ask to confirm the date. Empty string if none."
+    }
+  ],
+  "relative_events": [
+    {"title": "Mediation after principal depositions", "text": "Event sequenced relative to another event, with no calendar date.", "cite": "Document Name, p. 3, ¶ 9", "doc": "Document Name"}
+  ],
+  "undated_milestones": {
+    "items": [{"title": "Expert designations"}, {"title": "Dispositive motions"}, {"title": "Trial"}],
+    "cite": "Document Name, p. 2, ¶ 5 · no specific dates given"
+  }
+}
+
+Rules:
+- "dated_entries" must be in strict chronological order, earliest first. Include past filings AND proposed or future dates.
+- "kind" is "fixed" for dates established by the record (e.g. filing dates) and "proposed" for dates the parties propose that the Court has not ordered.
+- "relative_events" are events tied to another event instead of a calendar date. "undated_milestones" are standard scheduling milestones the filings mention but give no date for. Use empty lists if there are none.
+- Use only what is in the documents. Never invent dates, parties, or citations. Do not state whether any event was completed, late, or is current case status.
+- Every entry needs a precise citation (document, page, paragraph) where possible. Cite and set "doc" using the document's file name exactly as in its <document name> tag, without the extension; never use docket or "Doc. 10" style numbers.
+- Keep every text field concise (1-2 sentences)."""
+
+
+def generate_case_timeline(client: genai.Client, documents: list[tuple[str, bytes]]) -> dict:
+    """Returns the structured chronology used by the Case timeline tab. Raises ValueError if the output isn't valid JSON."""
+    return _generate_json_object(client, documents, TIMELINE_JSON_PROMPT)
 
 
 def stream_case_timeline(client: genai.Client, documents: list[tuple[str, bytes]]) -> Iterator[str]:
