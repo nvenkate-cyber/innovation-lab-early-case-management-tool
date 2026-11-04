@@ -130,39 +130,65 @@ button[data-testid="stBaseButton-primary"]:hover,
     border-color: #1d4ed8 !important;
 }
 
-/* ===== Tabs as pills ===== */
+/* ===== Tab Styling ===== */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
-    border-bottom: none;
+    gap: 24px !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding-bottom: 0px !important;
 }
 
-.stTabs [data-baseweb="tab"] {
-    background-color: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 8px 16px;
-    height: auto;
-    color: #334155;
+.stTabs [data-baseweb="tab"],
+button[role="tab"] {
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0px !important;
+    padding: 10px 4px 14px 4px !important;
+    height: auto !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: #475569 !important;
+    box-shadow: none !important;
+    transition: color 0.15s ease-in-out !important;
 }
 
-.stTabs [aria-selected="true"] {
-    background-color: #dbeafe;
-    border-color: #bfdbfe;
-    color: #1d4ed8;
-}
-
-.stTabs [data-baseweb="tab-highlight"],
-.stTabs div[data-baseweb="tab-highlight"] {
-    background-color: #2563eb !important;
-}
-
-.stTabs [data-baseweb="tab-border"],
-.stTabs div[data-baseweb="tab-border"] {
-    background-color: #dbeafe !important;
-}
-
-.stTabs [data-baseweb="tab"]:hover {
+.stTabs [data-baseweb="tab"]:hover,
+button[role="tab"]:hover {
+    background-color: transparent !important;
+    border: none !important;
     color: #1d4ed8 !important;
+}
+
+.stTabs [aria-selected="true"],
+button[role="tab"][aria-selected="true"] {
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0px !important;
+    color: #2563eb !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+}
+
+.stTabs [aria-selected="true"] p,
+button[role="tab"][aria-selected="true"] p,
+button[role="tab"][aria-selected="true"] span,
+button[role="tab"][aria-selected="true"] div {
+    color: #2563eb !important;
+}
+
+/* Custom/Restored Blue Bottom Underline Indicator */
+[data-baseweb="tab-highlight"],
+div[data-baseweb="tab-highlight"],
+[role="tablist"] [data-baseweb="tab-highlight"],
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    display: block !important;
+    background-color: #2563eb !important;
+    height: 3px !important;
+    border-radius: 3px 3px 0 0 !important;
+}
+
+[data-baseweb="tab-border"],
+div[data-baseweb="tab-border"] {
+    background-color: #e2e8f0 !important;
 }
 
 /* ===== Remove every remaining default red accent ===== */

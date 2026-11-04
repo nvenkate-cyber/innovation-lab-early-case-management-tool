@@ -158,7 +158,7 @@ def render_overview(data) -> None:
     )
 
     if data.get("snapshot"):
-        with st.expander("Narrative overview"):
+        with st.expander("Narrative overview", expanded=True):
             st.markdown(str(data["snapshot"]))
 
     # Card 2: Allegations and defenses
