@@ -991,3 +991,209 @@ div[data-testid="stAlert"] svg {
     border-color: #2563eb !important;
     box-shadow: 0 0 0 1px #2563eb !important;
 }
+
+/* ===== Discovery tab ===== */
+.disc-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #334155;
+}
+
+.disc-notice-icon {
+    color: #2563eb;
+    font-size: 14px;
+}
+
+.disc-accent {
+    color: #2563eb !important;
+}
+
+.disc-stat-grid,
+.disc-tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+.disc-stat,
+.disc-tile {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px 18px;
+}
+
+.disc-stat-label {
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 8px;
+}
+
+.disc-stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+
+.disc-stat-note,
+.disc-tile-note {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.disc-tile.proposed {
+    background-color: #eff6ff;
+    border-color: #bfdbfe;
+}
+
+.disc-tag {
+    display: inline-block;
+    font-size: 11px;
+    color: #475569;
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 1px 8px;
+    margin-bottom: 10px;
+}
+
+.disc-tag.proposed {
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+}
+
+.disc-tile-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 6px;
+}
+
+.disc-tile-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 10px;
+}
+
+.disc-rows {
+    border-top: 1px solid #e2e8f0;
+    margin-bottom: 12px;
+}
+
+.disc-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    column-gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.disc-row-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.disc-row-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #475569;
+}
+
+.disc-q {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 16px 0;
+}
+
+.disc-q-icon {
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.disc-q-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 2px;
+}
+
+.disc-q-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #475569;
+}
+
+@media (max-width: 900px) {
+    .disc-row {
+        grid-template-columns: 1fr;
+        row-gap: 4px;
+    }
+}
+
+/* ===== Conference questions tab ===== */
+.cq-class {
+    margin: 12px 0 0 0;
+}
+
+.cq-card {
+    padding: 18px 22px;
+}
+
+.cq-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.cq-icon {
+    font-size: 14px;
+}
+
+.cq-title {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.cq-pill {
+    font-size: 11px;
+    color: #64748b;
+    background-color: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 2px 8px;
+    white-space: nowrap;
+}
+
+.cq-question {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.55;
+    color: #0f172a;
+    margin-bottom: 10px;
+}
+
+.cq-context {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #475569;
+}

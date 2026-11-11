@@ -360,6 +360,273 @@ def render_timeline(data, lead_title: str = "") -> None:
         )
 
 
+# ---------- Discovery helpers ----------
+
+def disc_tile(item: dict) -> str:
+    proposed = str(item.get("kind") or "").lower() == "proposed"
+    cls = "disc-tile proposed" if proposed else "disc-tile"
+    tag_cls = "disc-tag proposed" if proposed else "disc-tag"
+    tag = f'<span class="{tag_cls}">{esc(item.get("tag"))}</span>' if esc(item.get("tag")) else ""
+    return (
+        f'<div class="{cls}">'
+        f"{tag}"
+        f'<div class="disc-tile-title">{esc(item.get("title")) or NOT_STATED}</div>'
+        f'<div class="disc-tile-value">{esc(item.get("value")) or NOT_STATED}</div>'
+        f'<div class="disc-tile-note">{esc(item.get("note"))}</div>'
+        "</div>"
+    )
+
+
+def render_discovery(data, tiered_plan: str = "") -> None:
+    """Discovery tab: posture notice, reported facts, disclosures and cutoff, and questions to confirm."""
+    if not isinstance(data, dict):
+        if tiered_plan:
+            st.markdown(tiered_plan)
+        return
+
+    report = esc(data.get("report_label")) or "filings"
+
+    # Card 1: header + notice
+    notice = esc(data.get("notice"))
+    st.markdown(
+        '<div class="figma-card">'
+        '<div class="card-label">DISCOVERY</div>'
+        '<div class="card-title">Discovery posture &amp; preparation</div>'
+        '<p class="card-subtitle">What the parties reported, what they proposed, and what to confirm before '
+        "the conference—kept distinct.</p>"
+        + (f'<div class="disc-notice"><span class="disc-notice-icon">ⓘ</span><span>{notice}</span></div>' if notice else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Card 2: reported facts
+    stats = [s for s in (data.get("stats") or []) if isinstance(s, dict)]
+    rows = [r for r in (data.get("reported_rows") or []) if isinstance(r, dict)]
+    stat_html = "".join(
+        '<div class="disc-stat">'
+        f'<div class="disc-stat-label">{esc(s.get("label"))}</div>'
+        f'<div class="disc-stat-value">{esc(s.get("value")) or NOT_STATED}</div>'
+        f'<div class="disc-stat-note">{esc(s.get("note"))}</div>'
+        "</div>"
+        for s in stats
+    )
+    row_html = "".join(
+        '<div class="disc-row">'
+        f'<div class="disc-row-label">{esc(r.get("label"))}</div>'
+        f'<div class="disc-row-text">{esc(r.get("text")) or NOT_STATED}</div>'
+        "</div>"
+        for r in rows
+    )
+    st.markdown(
+        '<div class="figma-card">'
+        f'<div class="tl-card-head"><span class="tl-card-title">Reported in the {report}</span>'
+        '<span class="count-pill">Reported facts</span></div>'
+        + (f'<div class="disc-stat-grid">{stat_html}</div>' if stat_html else "")
+        + (f'<div class="disc-rows">{row_html}</div>' if row_html else "")
+        + cite_chip(data.get("reported_cite"))
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Card 3: disclosures & proposed cutoff
+    disclosures = [d for d in (data.get("disclosures") or []) if isinstance(d, dict)]
+    if disclosures:
+        tiles = "".join(disc_tile(d) for d in disclosures)
+        cites = []
+        for d in disclosures:
+            c = str(d.get("cite") or "").strip()
+            if c and c not in cites:
+                cites.append(c)
+        st.markdown(
+            '<div class="figma-card">'
+            '<div class="tl-card-head"><span class="tl-card-title">Disclosures &amp; proposed cutoff</span>'
+            '<span class="count-pill">Not current status</span></div>'
+            f'<div class="disc-tile-grid">{tiles}</div>'
+            + "".join(cite_chip(c) for c in cites)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Card 4: questions to bring
+    questions = [q for q in (data.get("questions") or []) if isinstance(q, dict)]
+    if questions:
+        q_html = "".join(
+            '<div class="disc-q">'
+            '<span class="disc-q-icon">💬</span>'
+            "<div>"
+            f'<div class="disc-q-title">{esc(q.get("title"))}</div>'
+            f'<div class="disc-q-text">{esc(q.get("text"))}</div>'
+            "</div></div>"
+            for q in questions
+        )
+        st.markdown(
+            '<div class="figma-card">'
+            '<div class="card-label disc-accent">SUGGESTED PREPARATION · TO CONFIRM</div>'
+            '<div class="card-title">Questions to bring, not established facts</div>'
+            '<p class="card-subtitle">Use these prompts to update the report snapshot. '
+            "No answers or completed tasks are inferred.</p>"
+            f"{q_html}"
+            f'{cite_chip(data.get("questions_cite"))}'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Tiered plan kept available below the cards
+    if tiered_plan:
+        with st.expander("Tiered discovery plan (narrowest to broadest scope)"):
+            st.markdown(tiered_plan)
+
+
+# ---------- Conference questions helpers ----------
+
+def cq_card(item: dict) -> str:
+    questions = item.get("questions")
+    if isinstance(questions, str):
+        questions = [questions]
+    q_html = "".join(
+        f'<div class="cq-question">{esc(q)}</div>' for q in (questions or []) if esc(q)
+    )
+    context = esc(item.get("context"))
+    return (
+        '<div class="figma-card cq-card">'
+        '<div class="cq-head">'
+        '<span class="cq-icon">💬</span>'
+        f'<span class="cq-title">{esc(item.get("title")) or NOT_STATED}</span>'
+        f'<span class="cq-pill">{esc(item.get("tag")) or "To confirm"}</span>'
+        "</div>"
+        f"{q_html}"
+        + (f'<div class="cq-context"><div>{context}</div>{cite_chip(item.get("cite"))}</div>' if context else "")
+        + "</div>"
+    )
+
+
+def render_conference_questions(data, full_report: str = "") -> None:
+    """Conference questions tab: agenda of source-linked prompts for counsel's preparation."""
+    if not isinstance(data, dict):
+        if full_report:
+            st.markdown(full_report)
+        return
+
+    notice = esc(data.get("notice"))
+    classification = esc(data.get("case_classification"))
+    st.markdown(
+        '<div class="figma-card">'
+        '<div class="card-label">CONFERENCE QUESTIONS</div>'
+        '<div class="card-title">Possible questions to prepare for</div>'
+        '<p class="card-subtitle">A condensed, source-linked agenda for counsel\'s preparation—not predictions '
+        "of what the judge will ask.</p>"
+        + (f'<div class="disc-notice"><span class="disc-notice-icon">ⓘ</span><span>{notice}</span></div>' if notice else "")
+        + (f'<p class="card-subtitle cq-class">Case classification: {classification}</p>' if classification else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    items = [i for i in (data.get("items") or []) if isinstance(i, dict)]
+    if items:
+        st.markdown("".join(cq_card(i) for i in items), unsafe_allow_html=True)
+    else:
+        st.info("No questions presenting a realistic opportunity for early resolution were identified.")
+
+    if full_report:
+        with st.expander("Full early resolution analysis"):
+            st.markdown(full_report)
+
+
+# ---------- Damages helpers ----------
+
+def dmg_claim_card(item: dict) -> str:
+    fields = [
+        ("Formula", item.get("formula")),
+        ("Inputs & sources", item.get("inputs")),
+        ("Result", item.get("result")),
+        ("Missing info & limits", item.get("missing")),
+    ]
+    rows = "".join(
+        '<div class="disc-row">'
+        f'<div class="disc-row-label">{label}</div>'
+        f'<div class="disc-row-text{" dmg-result" if label == "Result" else ""}">{esc(text)}</div>'
+        "</div>"
+        for label, text in fields
+        if esc(text)
+    )
+    return (
+        '<div class="figma-card cq-card">'
+        '<div class="cq-head">'
+        '<span class="cq-icon">🧮</span>'
+        f'<span class="cq-title">{esc(item.get("title")) or NOT_STATED}</span>'
+        f'<span class="cq-pill">{esc(item.get("tag"))}</span>'
+        "</div>"
+        f'<div class="disc-rows">{rows}</div>'
+        f'{cite_chip(item.get("cite"))}'
+        "</div>"
+    )
+
+
+def render_damages(data, full_report: str = "") -> None:
+    """Damages tab: summary tiles, one card per claim/remedy, and notes."""
+    if not isinstance(data, dict):
+        if full_report:
+            st.markdown(full_report, unsafe_allow_html=True)
+        return
+
+    notice = esc(data.get("notice"))
+    case_type = esc(data.get("case_type"))
+    summary = [s for s in (data.get("summary") or []) if isinstance(s, dict)]
+    tiles = "".join(
+        '<div class="disc-stat">'
+        f'<div class="disc-stat-label">{esc(s.get("label"))}</div>'
+        f'<div class="disc-stat-value">{esc(s.get("value")) or NOT_STATED}</div>'
+        f'<div class="disc-stat-note">{esc(s.get("note"))}</div>'
+        "</div>"
+        for s in summary
+    )
+
+    # Card 1: header, notice, summary tiles
+    st.markdown(
+        '<div class="figma-card">'
+        '<div class="card-label">DAMAGES</div>'
+        '<div class="card-title">Potential damages &amp; remedies</div>'
+        '<p class="card-subtitle">Grounded calculations from documented inputs. Allegations and estimates are '
+        "kept distinct from established facts.</p>"
+        + (f'<div class="disc-notice"><span class="disc-notice-icon">ⓘ</span><span>{notice}</span></div>' if notice else "")
+        + (f'<p class="card-subtitle cq-class">Case type: {case_type}</p>' if case_type else "")
+        + (f'<div class="disc-stat-grid dmg-tiles">{tiles}</div>' if tiles else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Claim cards
+    claims = [c for c in (data.get("claims") or []) if isinstance(c, dict)]
+    if claims:
+        st.markdown("".join(dmg_claim_card(c) for c in claims), unsafe_allow_html=True)
+    else:
+        st.info("The documents do not support a damages calculation.")
+
+    # Notes card
+    notes = [n for n in (data.get("notes") or []) if isinstance(n, dict)]
+    if notes:
+        rows = "".join(
+            '<div class="disc-row">'
+            f'<div class="disc-row-label">{esc(n.get("label"))}</div>'
+            f'<div class="disc-row-text">{esc(n.get("text")) or NOT_STATED}</div>'
+            "</div>"
+            for n in notes
+        )
+        st.markdown(
+            '<div class="figma-card">'
+            '<div class="tl-card-head"><span class="tl-card-title">Notes, defenses &amp; limitations</span>'
+            '<span class="count-pill">Not findings</span></div>'
+            f'<div class="disc-rows">{rows}</div>'
+            f'{cite_chip(data.get("notes_cite"))}'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    if full_report:
+        with st.expander("Full damages table"):
+            st.markdown(full_report, unsafe_allow_html=True)
+
+
 # ---------- Document Preview Helpers ----------
 
 def render_pdf(data: bytes) -> None:
@@ -467,10 +734,22 @@ def run_analysis(uploaded_files, client, force: bool = False) -> None:
             timeline_job,
         ))
 
+    if stale or "discovery_view" not in st.session_state:
+        jobs.append((
+            "discovery posture", "discovery_view", None,
+            lambda: analysis.generate_case_discovery(client, doc_tuples),
+        ))
+
     if stale or "discovery" not in st.session_state:
         jobs.append((
             "discovery plan", "discovery", None,
             lambda: collect(analysis.stream_discovery_analysis(client, doc_tuples)),
+        ))
+
+    if stale or "conference_view" not in st.session_state:
+        jobs.append((
+            "conference question agenda", "conference_view", None,
+            lambda: analysis.generate_conference_questions(client, doc_tuples, excel_bytes=questions_excel_bytes),
         ))
 
     if stale or "conference_questions" not in st.session_state:
@@ -479,6 +758,12 @@ def run_analysis(uploaded_files, client, force: bool = False) -> None:
             lambda: collect(
                 analysis.stream_conference_questions(client, doc_tuples, excel_bytes=questions_excel_bytes)
             ),
+        ))
+
+    if stale or "damages_view" not in st.session_state:
+        jobs.append((
+            "damages overview", "damages_view", None,
+            lambda: analysis.generate_damages_overview(client, doc_tuples, damages_excel_bytes=damages_excel_bytes),
         ))
 
     if stale or "damages" not in st.session_state:
@@ -663,43 +948,28 @@ def main() -> None:
 
         # --- TAB 3: DISCOVERY ---
         with tab_discovery:
-            st.markdown('<div class="card-label">DISCOVERY</div>', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Discovery Posture & Tiered Plan</div>', unsafe_allow_html=True)
-            st.markdown(
-                '<p class="card-subtitle">A 3-tiered discovery plan designed to achieve early factual resolution while narrowing requested depositions and document productions.</p>',
-                unsafe_allow_html=True,
-            )
-
-            if "discovery" in st.session_state and st.session_state["discovery"]:
-                st.markdown(st.session_state["discovery"])
+            disc_view = st.session_state.get("discovery_view")
+            disc_plan = st.session_state.get("discovery") or ""
+            if disc_view or disc_plan:
+                render_discovery(disc_view, disc_plan)
             else:
                 st.info("Click **✨ Analyze documents** to generate the discovery analysis.")
 
         # --- TAB 4: CONFERENCE QUESTIONS ---
         with tab_questions:
-            st.markdown('<div class="card-label">CONFERENCE QUESTIONS</div>', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Early Resolution Report</div>', unsafe_allow_html=True)
-            st.markdown(
-                '<p class="card-subtitle">Evaluated questions from Common_Questions.xlsx to identify potential early dismissal, judgment, settlement, or narrowing issues.</p>',
-                unsafe_allow_html=True,
-            )
-
-            if "conference_questions" in st.session_state and st.session_state["conference_questions"]:
-                st.markdown(st.session_state["conference_questions"])
+            cq_view = st.session_state.get("conference_view")
+            cq_report = st.session_state.get("conference_questions") or ""
+            if cq_view or cq_report:
+                render_conference_questions(cq_view, cq_report)
             else:
                 st.info("Click **✨ Analyze documents** to generate the early resolution questions analysis.")
 
         # --- TAB 5: DAMAGES ---
         with tab_damages:
-            st.markdown('<div class="card-label">DAMAGES</div>', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Potential Damages & Remedy Breakdown</div>', unsafe_allow_html=True)
-            st.markdown(
-                '<p class="card-subtitle">Grounded damages calculations referencing Damages_Equations.xlsx formulas and documented case inputs.</p>',
-                unsafe_allow_html=True,
-            )
-
-            if "damages" in st.session_state and st.session_state["damages"]:
-                st.markdown(st.session_state["damages"], unsafe_allow_html=True)
+            dmg_view = st.session_state.get("damages_view")
+            dmg_report = st.session_state.get("damages") or ""
+            if dmg_view or dmg_report:
+                render_damages(dmg_view, dmg_report)
             else:
                 st.info("Click **✨ Analyze documents** to calculate potential damages.")
 

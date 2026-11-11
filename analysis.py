@@ -450,11 +450,17 @@ def _generate_json(client: genai.Client, contents: list):
     return client.models.generate_content(model=MODEL, contents=contents, config=config)
 
 
-def _generate_json_object(client: genai.Client, documents: list[tuple[str, bytes]], prompt: str) -> dict:
+def _generate_json_object(
+    client: genai.Client,
+    documents: list[tuple[str, bytes]],
+    prompt: str,
+    extra_context: Optional[list[str]] = None,
+) -> dict:
     """Runs a JSON-mode call over all documents and returns the parsed object. Raises ValueError on bad JSON."""
     contents = []
     for name, data in documents:
         contents.extend(build_content(name, data))
+    contents.extend(extra_context or [])
     contents.append(prompt)
 
     response = _generate_json(client, contents)
@@ -518,6 +524,157 @@ Rules:
 def generate_case_timeline(client: genai.Client, documents: list[tuple[str, bytes]]) -> dict:
     """Returns the structured chronology used by the Case timeline tab. Raises ValueError if the output isn't valid JSON."""
     return _generate_json_object(client, documents, TIMELINE_JSON_PROMPT)
+
+
+DISCOVERY_JSON_PROMPT = """Prepare a structured discovery posture for Judge Xavier Rodriguez's early case management conference, based only on the provided documents.
+
+Return ONLY a single JSON object (no markdown, no code fences) with exactly this shape:
+
+{
+  "report_label": "Short label for the lead filing, e.g. Joint Rule 26(f) Report",
+  "report_date": "Filing date of that report, e.g. May 23, 2024",
+  "notice": "One sentence caveat, e.g. Report snapshot · May 23, 2024. These statements do not establish current discovery progress or governing deadlines.",
+  "stats": [
+    {"label": "Discovery completed", "value": "None reported", "note": "At the time of the report"},
+    {"label": "Discovery disputes", "value": "None reported", "note": "At the time of the report"}
+  ],
+  "reported_rows": [
+    {"label": "ESI", "text": "No current ESI issues reported."},
+    {"label": "Privilege & trial preparation", "text": "..."},
+    {"label": "Rule 502", "text": "..."},
+    {"label": "Discovery structure & limits", "text": "..."},
+    {"label": "Other orders", "text": "..."}
+  ],
+  "reported_cite": "Document Name, pp. 2-3, ¶¶ 5-8",
+  "disclosures": [
+    {"tag": "Scheduled in report", "title": "Initial disclosures", "value": "By May 23, 2024", "note": "Exchange or completion not verified.", "kind": "fixed", "cite": "Document Name, p. 2, ¶ 5"},
+    {"tag": "Proposed", "title": "Discovery cutoff", "value": "October 22, 2024", "note": "Adoption or amendment to confirm.", "kind": "proposed", "cite": "Document Name, p. 2, ¶ 5"}
+  ],
+  "questions": [
+    {"title": "Progress since the report", "text": "Neutral question the judge could ask."}
+  ],
+  "questions_cite": "Document Name, pp. 2-3, ¶¶ 5-9"
+}
+
+Rules:
+- Use only what is in the documents. If a value is not stated, use "Not stated in provided documents". Never invent facts, dates, or citations.
+- Include as many "reported_rows", "disclosures" and "questions" as the documents support (typically 3-6 rows, 1-3 disclosure/cutoff items, 3-5 questions). Add rows for anything else the documents say about discovery (e.g. depositions, interrogatories, limits).
+- Do not state or imply that any discovery has since been completed, disputed, or is late. Statements describe the filings at the time they were made.
+- Questions are neutral prompts to update the snapshot; they must not contain recommendations or inferred answers.
+- Cite using the document's file name exactly as in its <document name> tag, without the extension; never use docket or "Doc. 10" style numbers.
+- Keep every text field to one concise sentence. Stay neutral between the parties."""
+
+
+def generate_case_discovery(client: genai.Client, documents: list[tuple[str, bytes]]) -> dict:
+    """Returns the structured discovery posture used by the Discovery tab. Raises ValueError if the output isn't valid JSON."""
+    return _generate_json_object(client, documents, DISCOVERY_JSON_PROMPT)
+
+
+CONFERENCE_JSON_PROMPT = """You are preparing a condensed, source-linked agenda of questions for counsel to prepare for an early case management conference before Judge Xavier Rodriguez. The case documents and a reference dataset of common questions by case type are provided above.
+
+Method (do not describe this method in the output):
+1. Classify the lawsuit into the best-matching category in the reference dataset (consider other categories' questions if they clearly fit).
+2. From the matching category's questions, keep only those whose resolution could realistically lead to early dismissal, judgment, settlement, or narrowing of the case. Do not invent questions. You may condense or combine closely related reference questions into one topic.
+3. Rank topics from most to least promising for early resolution.
+
+Return ONLY a single JSON object (no markdown, no code fences) with exactly this shape:
+
+{
+  "case_classification": "Primary category and a one-sentence reason.",
+  "notice": "One sentence caveat, e.g. All prompts are suggestions. Answers remain to confirm; the report does not establish later rulings, current progress, or a conference date.",
+  "items": [
+    {
+      "title": "Short topic, e.g. Jurisdiction & service",
+      "tag": "To confirm",
+      "questions": ["One or two neutral questions the judge could ask about this topic."],
+      "context": "One or two sentences on what the documents say about this topic, distinguishing allegations and party positions from agreed or established facts.",
+      "cite": "Document Name, pp. 1-2, ¶¶ 1-2"
+    }
+  ]
+}
+
+Rules:
+- Use only what is in the documents for case-specific facts. If the documents do not address a topic, say so in "context". Never invent facts, dates, or citations, and never infer answers to open questions.
+- Do not flag a question merely because it is unanswered; include it only if resolving it could materially affect the litigation.
+- Aim for roughly 4-7 items; if no question presents a realistic opportunity for early resolution, return an empty "items" list and say so in "case_classification".
+- "tag" is "To confirm" for every item.
+- Questions must be neutral prompts, not recommendations or predictions of what the judge will ask.
+- Cite using the document's file name exactly as in its <document name> tag, without the extension; never use docket or "Doc. 10" style numbers.
+- Do not mention any spreadsheet, dataset, or reference file in the output.
+- Keep text concise and stay neutral between the parties."""
+
+
+def generate_conference_questions(
+    client: genai.Client,
+    documents: list[tuple[str, bytes]],
+    excel_bytes: Optional[bytes] = None,
+) -> dict:
+    """Returns the structured question agenda used by the Conference questions tab. Raises ValueError on bad JSON."""
+    return _generate_json_object(
+        client,
+        documents,
+        CONFERENCE_JSON_PROMPT,
+        extra_context=[load_common_questions(excel_bytes=excel_bytes)],
+    )
+
+
+DAMAGES_JSON_PROMPT = """You are preparing a grounded, neutral damages overview for Judge Xavier Rodriguez's early case management conference. The case documents and a reference dataset of damages formulas by case type are provided above.
+
+Method (do not describe this method in the output):
+1. Identify the claims asserted and the matching case type and formula(s) in the reference dataset.
+2. For each claim/remedy, apply the formula only to inputs found in the documents. Distinguish allegations, estimates, and established facts. Derive values only through transparent arithmetic from documented inputs.
+3. Do not assume liability, treat demanded amounts as proven losses, or automatically apply maximum awards or multipliers. Flag uncertain legal prerequisites or ambiguous formulas for attorney review.
+
+Return ONLY a single JSON object (no markdown, no code fences) with exactly this shape:
+
+{
+  "case_type": "Matched case type and one-sentence basis.",
+  "notice": "One sentence caveat, e.g. Figures are illustrative estimates from alleged inputs; they do not establish liability or damages.",
+  "summary": [
+    {"label": "Compensatory damages", "value": "~$10,000 or Not determinable", "note": "Supported components only"}
+  ],
+  "claims": [
+    {
+      "title": "Claim / remedy name",
+      "tag": "Supported | Partially supported | Not determinable",
+      "formula": "Formula in plain text, e.g. Back pay = weekly wage x weeks lost",
+      "inputs": "Inputs used and where each comes from, noting whether each is alleged, estimated, or established.",
+      "result": "Arithmetic and result, or Not determinable from provided documents.",
+      "missing": "Missing inputs and evidence needed, plus any limitations. Empty string if none.",
+      "cite": "Document Name, p. 3, ¶ 12"
+    }
+  ],
+  "notes": [
+    {"label": "Currency & period", "text": "..."},
+    {"label": "Supported subtotals", "text": "..."},
+    {"label": "Defenses & positions", "text": "..."}
+  ],
+  "notes_cite": "Document Name, p. 4, ¶ 15"
+}
+
+Rules:
+- Use only what is in the documents. Never invent values, dates, or citations. Never substitute zero for an unknown: if an essential input is missing or unreadable, write "Not determinable from provided documents" and name the missing input.
+- Write formulas in plain standard text. Do NOT use LaTeX or special math markup.
+- Calculate supported components separately; label any partial subtotal as incomplete, not as total damages.
+- "summary" has one tile per damages type (e.g. compensatory, punitive, statutory, fees) with a short value such as "~$10,000" or "Not determinable". Use 2-4 tiles.
+- If the documents support no damages analysis, return empty "claims" and "summary" lists and say so in "case_type".
+- Cite using the document's file name exactly as in its <document name> tag, without the extension; never use docket or "Doc. 10" style numbers.
+- Do not mention any spreadsheet, dataset, or reference file in the output.
+- Keep each text field concise (1-2 sentences). Stay neutral between the parties."""
+
+
+def generate_damages_overview(
+    client: genai.Client,
+    documents: list[tuple[str, bytes]],
+    damages_excel_bytes: Optional[bytes] = None,
+) -> dict:
+    """Returns the structured damages overview used by the Damages tab. Raises ValueError on bad JSON."""
+    return _generate_json_object(
+        client,
+        documents,
+        DAMAGES_JSON_PROMPT,
+        extra_context=[load_damages_equations(excel_bytes=damages_excel_bytes)],
+    )
 
 
 def stream_case_timeline(client: genai.Client, documents: list[tuple[str, bytes]]) -> Iterator[str]:
