@@ -22,6 +22,8 @@ import analysis
 
 try:
     from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
 except ImportError:
     Document = None
 
@@ -798,6 +800,38 @@ def run_analysis(uploaded_files, client, force: bool = False) -> None:
                     st.session_state[bucket] = result
         progress.empty()
 
+        # ---------- Detect motions from existing summaries ----------
+
+    if force or st.session_state.get("motion_detection_key") != ov_key:
+
+        # Match each filename to its existing AI-generated summary.
+        document_summaries = {}
+
+        for f in case_docs:
+            summary_key = file_key(f)
+
+            if summary_key in st.session_state["summaries"]:
+                document_summaries[f.name] = (
+                    st.session_state["summaries"][summary_key]
+                )
+
+        # Identify motions without reprocessing the original PDFs.
+        if document_summaries:
+            try:
+                detected_motions = analysis.detect_motions_from_summaries(
+                    client,
+                    document_summaries
+                )
+
+                st.session_state["detected_motions"] = detected_motions
+                st.session_state["motion_detection_key"] = ov_key
+
+            except Exception as e:
+                st.session_state["detected_motions"] = []
+                st.error(f"Motion detection failed: {e}")
+        else:
+            st.session_state["detected_motions"] = []
+
     st.session_state["last_ov_key"] = ov_key
 
 
@@ -820,6 +854,203 @@ def apply_blue_theme() -> None:
             config.set_option(f"theme.{key}", value)
     except Exception:
         pass
+
+# ---------- Bench Memorandum Word Export ----------
+
+def export_bench_memo(briefing, overview, motion):
+    """Create a formatted Word bench memorandum."""
+
+    if Document is None:
+        raise RuntimeError(
+            "python-docx is required for Word export."
+        )
+
+    doc = Document()
+
+    # ---------- Page Setup ----------
+
+    section = doc.sections[0]
+
+    section.top_margin = Inches(1)
+    section.bottom_margin = Inches(1)
+    section.left_margin = Inches(1)
+    section.right_margin = Inches(1)
+
+       # ---------- Font and Paragraph Formatting ----------
+
+    styles = doc.styles
+
+    normal_style = styles["Normal"]
+    normal_style.font.name = "Times New Roman"
+    normal_style.font.size = Pt(12)
+    normal_style.font.color.rgb = RGBColor(0, 0, 0)
+
+    # Body paragraph spacing
+    normal_style.paragraph_format.space_after = Pt(8)
+    normal_style.paragraph_format.line_spacing = 1.15
+
+    # Heading formatting
+    for style_name in ["Title", "Heading 1", "Heading 2"]:
+
+        style = styles[style_name]
+
+        style.font.name = "Times New Roman"
+        style.font.size = Pt(12)
+        style.font.bold = True
+        style.font.color.rgb = RGBColor(0, 0, 0)
+
+        style.paragraph_format.space_before = Pt(14)
+        style.paragraph_format.space_after = Pt(6)
+        style.paragraph_format.keep_with_next = True
+    # ---------- Heading ----------
+
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    run = title.add_run("BENCH MEMORANDUM")
+    run.bold = True
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(14)
+
+    doc.add_paragraph()
+
+    # ---------- Case Information ----------
+
+    case_identity = (
+        overview.get("case_identity", {})
+        if isinstance(overview, dict)
+        else {}
+    )
+
+    caption = case_identity.get(
+        "caption", "[Case Caption]"
+    )
+
+    case_number = case_identity.get(
+        "case_number", "[Case Number]"
+    )
+
+    motion_type = motion.get(
+        "motion_type", "Pending Motion"
+    )
+
+    # ---------- Memorandum Header ----------
+
+    header_fields = [
+        ("TO:", "Hon. Xavier Rodriguez"),
+        ("FROM:", "[Name / Chambers]"),
+        ("DATE:", "[Date]"),
+        (
+            "RE:",
+            f"{caption}, No. {case_number} — {motion_type}"
+        )
+    ]
+
+    for label, value in header_fields:
+
+        paragraph = doc.add_paragraph()
+
+        run = paragraph.add_run(label + "  ")
+        run.bold = True
+
+        paragraph.add_run(value)
+
+    doc.add_paragraph()
+
+    # ---------- Memorandum Sections ----------
+
+    sections = [
+        ("I. ISSUES PRESENTED", "issues_presented"),
+        ("II. STATEMENT OF THE CASE", "statement_of_case"),
+        ("III. PROCEDURAL HISTORY", "procedural_history"),
+        ("IV. RELEVANT FACTS", "relevant_facts"),
+        ("V. APPLICABLE LAW", "applicable_law"),
+        ("VI. MOVANT'S ARGUMENTS", "movant_arguments"),
+        ("VII. OPPOSITION ARGUMENTS", "opposition_arguments"),
+        (
+            "VIII. MATTERS FOR ORAL ARGUMENT",
+            "oral_argument_matters"
+        )
+    ]
+
+    for heading, field in sections:
+
+        doc.add_heading(heading, level=1)
+
+        content = briefing.get(
+            field,
+            "Not addressed in the provided documents."
+        )
+
+        # Special formatting for oral argument questions.
+        if field == "oral_argument_matters" and isinstance(content, list):
+
+            for number, item in enumerate(content, start=1):
+
+                if not isinstance(item, dict):
+                    doc.add_paragraph(str(item))
+                    continue
+
+                issue = item.get(
+                    "issue_requiring_clarification", ""
+                )
+
+                party = item.get(
+                    "party_to_address", ""
+                )
+
+                reason = item.get(
+                    "why_it_matters", ""
+                )
+
+                question = item.get(
+                    "specific_question", ""
+                )
+
+                # Numbered issue heading
+                p = doc.add_paragraph()
+                p.add_run(
+                    f"{number}. {issue}"
+                ).bold = True
+
+                # Party to address
+                p = doc.add_paragraph()
+                p.add_run("Party: ").bold = True
+                p.add_run(party)
+
+                # Explanation
+                p = doc.add_paragraph()
+                p.add_run("Significance: ").bold = True
+                p.add_run(reason)
+
+                # Suggested question
+                p = doc.add_paragraph()
+                p.add_run("Question: ").bold = True
+                p.add_run(question)
+
+        elif isinstance(content, list):
+
+            # Format other lists as numbered items.
+            for number, item in enumerate(content, start=1):
+                doc.add_paragraph(f"{number}. {item}")
+
+        else:
+
+            # Format ordinary text.
+            for paragraph_text in str(content).split("\n\n"):
+
+                if paragraph_text.strip():
+                    doc.add_paragraph(paragraph_text.strip())
+
+    # ---------- Save to Memory ----------
+
+    buffer = io.BytesIO()
+
+    doc.save(buffer)
+
+    buffer.seek(0)
+
+    return buffer.getvalue()
 
 
 def main() -> None:
@@ -869,7 +1100,7 @@ def main() -> None:
 
     if not uploaded_files:
         with left_col:
-            empty_tabs = st.tabs(["Overview", "Case timeline", "Discovery", "Conference questions", "Damages"])
+            empty_tabs = st.tabs(["Overview", "Case Timeline", "Discovery", "Conference Questions", "Damages", "Motion Briefing"])
             with empty_tabs[0]:
                 st.markdown(
                     '<div class="figma-card"><div class="card-label">SUMMARY</div>'
@@ -920,12 +1151,13 @@ def main() -> None:
 
     # ----- Left column: tabs -----
     with left_col:
-        tab_summary, tab_timeline, tab_discovery, tab_questions, tab_damages = st.tabs([
+        tab_summary, tab_timeline, tab_discovery, tab_questions, tab_damages, tab_motion = st.tabs([
             "Overview",
-            "Case timeline",
+            "Case Timeline",
             "Discovery",
-            "Conference questions",
+            "Conference Questions",
             "Damages",
+            "Motion Briefing",
         ])
 
         # --- TAB 1: OVERVIEW ---
@@ -972,6 +1204,262 @@ def main() -> None:
                 render_damages(dmg_view, dmg_report)
             else:
                 st.info("Click **✨ Analyze documents** to calculate potential damages.")
+
+        # --- TAB 6: MOTION BRIEFING ---
+        with tab_motion:
+            st.subheader("Motion Briefing")
+            motions = st.session_state.get("detected_motions", [])
+
+            if motions:
+
+                st.success(
+                    f"Detected {len(motions)} motion(s) "
+                    "among the uploaded documents."
+                )
+
+                # Allow the user to select a motion.
+                motion_names = [
+                    motion["filename"] for motion in motions
+                ]
+
+                selected_motion_name = st.selectbox(
+                    "Select a motion to analyze:",
+                    motion_names,
+                    key="selected_motion"
+                )
+
+                # Find the selected motion's information.
+                selected_motion = next(
+                    motion for motion in motions
+                    if motion["filename"] == selected_motion_name
+                )
+
+                st.markdown("### Motion Information")
+
+                st.write(
+                    "**Motion Type:**",
+                    selected_motion.get(
+                        "motion_type", "Not identified"
+                    )
+                )
+
+                st.write(
+                    "**Filing Party:**",
+                    selected_motion.get(
+                        "filing_party", "Not identified"
+                    )
+                )
+
+                st.write(
+                    "**Relief Requested:**",
+                    selected_motion.get(
+                        "relief_requested", "Not identified"
+                    )
+                )
+
+                # Display associated response
+                st.markdown("### Associated Filings")
+
+                response_name = selected_motion.get(
+                    "response_filename"
+                )
+
+                if response_name:
+                    st.success(
+                        f"Response detected: {response_name}"
+                    )
+                else:
+                    st.warning(
+                        "No response to this motion was detected."
+                    )
+
+                reply_name = selected_motion.get(
+                    "reply_filename"
+                )
+
+                if reply_name:
+                    st.info(
+                        f"Reply detected: {reply_name}"
+                    )
+
+                                # ---------- Bench Memorandum Generation ----------
+
+                st.divider()
+
+                st.markdown("### Bench Memorandum")
+
+                # Store generated memoranda for reuse.
+                st.session_state.setdefault("motion_briefings", {})
+
+                # Create a unique key for this motion and document set.
+                briefing_key = (
+                    ov_key,
+                    selected_motion_name
+                )
+
+                # Automatically generate the memorandum
+                # if one has not already been generated.
+                generate_briefing = (
+                    briefing_key not in
+                    st.session_state["motion_briefings"]
+                )
+
+                if generate_briefing:
+
+                    # Locate the original motion.
+                    motion_file = next(
+                        (
+                            f for f in uploaded_files
+                            if f.name == selected_motion_name
+                        ),
+                        None
+                    )
+
+                    # Locate the original response, if available.
+                    response_filename = selected_motion.get(
+                        "response_filename"
+                    )
+
+                    response_file = next(
+                        (
+                            f for f in uploaded_files
+                            if f.name == response_filename
+                        ),
+                        None
+                    )
+
+                    if motion_file is None:
+                        st.error(
+                            "The selected motion could not be found."
+                        )
+
+                    else:
+
+                        # Get existing document summaries.
+                        document_summaries = {}
+
+                        for f in uploaded_files:
+                            summary_key = file_key(f)
+
+                            if summary_key in st.session_state["summaries"]:
+                                document_summaries[f.name] = (
+                                    st.session_state["summaries"][summary_key]
+                                )
+
+                        # Prepare the motion for Gemini.
+                        motion_document = (
+                            motion_file.name,
+                            motion_file.getvalue()
+                        )
+
+                        # Prepare the response, if available.
+                        response_document = None
+
+                        if response_file is not None:
+                            response_document = (
+                                response_file.name,
+                                response_file.getvalue()
+                            )
+
+                        # Retrieve existing analysis.
+                        case_overview = get_overview(ov_key)
+
+                        case_timeline = st.session_state.get(
+                            "timeline"
+                        )
+
+                        # Generate the briefing.
+                        with st.spinner(
+                            "Generating bench memorandum..."
+                        ):
+
+                            try:
+                                briefing = analysis.generate_motion_briefing(
+                                    client=client,
+                                    motion_document=motion_document,
+                                    response_document=response_document,
+                                    overview=case_overview,
+                                    timeline=case_timeline,
+                                    document_summaries=document_summaries
+                                )
+
+                                st.session_state["motion_briefings"][
+                                    briefing_key
+                                ] = briefing
+
+                            except Exception as e:
+                                st.error(
+                                    f"Bench memorandum generation failed: {e}"
+                                )
+
+                # ---------- Display Generated Memorandum ----------
+
+                briefing = st.session_state[
+                    "motion_briefings"
+                ].get(briefing_key)
+
+                if briefing:
+
+                    # ---------- Download Word Memorandum ----------
+
+                    if Document is not None:
+
+                        word_data = export_bench_memo(
+                            briefing=briefing,
+                            overview=get_overview(ov_key),
+                            motion=selected_motion
+                        )
+
+                        st.download_button(
+                            label="📄 Download Bench Memorandum (.docx)",
+                            data=word_data,
+                            file_name="Bench_Memorandum.docx",
+                            mime=(
+                                "application/vnd.openxmlformats-officedocument."
+                                "wordprocessingml.document"
+                            ),
+                            key="download_motion_briefing",
+                            use_container_width=True
+                        )
+
+                    else:
+                        st.error(
+                            "Word export requires python-docx."
+                        )
+
+                    st.divider()
+
+                    sections = [
+                        ("Issues Presented", "issues_presented"),
+                        ("Statement of the Case", "statement_of_case"),
+                        ("Procedural History", "procedural_history"),
+                        ("Relevant Facts", "relevant_facts"),
+                        ("Applicable Law", "applicable_law"),
+                        ("Movant's Arguments", "movant_arguments"),
+                        ("Opposition Arguments", "opposition_arguments"),
+                        ("Matters for Oral Argument", "oral_argument_matters"),
+                    ]
+
+                    for title, field in sections:
+
+                        st.markdown(f"### {title}")
+
+                        content = briefing.get(
+                            field,
+                            "Not addressed in the provided documents."
+                        )
+
+                        st.markdown(content)
+
+                                       
+
+            else:
+                st.warning(
+                    "No motions were detected among the uploaded "
+                    "documents. To generate a Motion Briefing, "
+                    "upload a motion using the regular case "
+                    "documents uploader."
+                )
 
     # ----- Right column, part 3: source-in-view panels -----
     with right_col:

@@ -727,3 +727,255 @@ def stream_damages_analysis(
     contents.append(DAMAGES_PROMPT)
 
     return _stream(client, contents)
+
+# ---------- Motion Detection ----------
+
+MOTION_DETECTION_PROMPT = """
+You are assisting a federal district court judge.
+
+Review the provided DOCUMENT SUMMARIES and identify:
+
+1. All uploaded motions.
+2. Any uploaded responses opposing those motions.
+3. Any uploaded replies supporting those motions.
+
+Match each response and reply to the appropriate motion.
+
+Examples of motions:
+- Motion to Dismiss
+- Motion for Summary Judgment
+- Motion to Compel
+- Motion for Preliminary Injunction
+
+A response is a filing in which a party responds to
+a particular motion, typically opposing the requested relief.
+
+A reply is a filing in which the moving party responds
+to the opposition.
+
+Return ONLY a JSON object in this format:
+
+{
+    "motions": [
+        {
+            "filename": "Motion_to_Dismiss.pdf",
+            "motion_type": "Motion to Dismiss",
+            "filing_party": "Defendant",
+            "relief_requested": "Dismissal of all claims.",
+            "response_filename": "Response_to_Motion.pdf",
+            "reply_filename": null
+        }
+    ]
+}
+
+RULES:
+- Use exact uploaded filenames.
+- Only identify documents actually uploaded.
+- Match responses and replies using the parties,
+  motion titles, and descriptions of the issues.
+- Do not assume a response exists merely because a
+  motion references one.
+- If no matching response is uploaded, set
+  response_filename to null.
+- If no matching reply is uploaded, set
+  reply_filename to null.
+- Do not classify complaints, answers, or
+  scheduling orders as motions.
+- If a relationship is uncertain, use null.
+- Do not invent information.
+- If no motions exist, return {"motions": []}.
+"""
+
+
+def detect_motions_from_summaries(client, summaries):
+    """
+    Identify motions using previously generated document summaries.
+
+    summaries: dictionary mapping filenames to summary text.
+    """
+
+    contents = []
+
+    for filename, summary in summaries.items():
+        contents.append(
+            f"DOCUMENT: {filename}\n"
+            f"SUMMARY:\n{summary}\n"
+        )
+
+    contents.append(MOTION_DETECTION_PROMPT)
+
+    response = _generate_json(client, contents)
+
+    result = json.loads(response.text)
+
+    return result.get("motions", [])
+
+# ---------- Motion Briefing Generation ----------
+
+MOTION_BRIEFING_PROMPT = """
+You are preparing a neutral bench memorandum for a United States
+District Court judge deciding a pending motion.
+
+Generate a concise, legally rigorous memorandum using:
+1. The existing case overview.
+2. The existing procedural timeline.
+3. The previously generated summaries of other case documents.
+4. The original motion.
+5. The original response, if provided.
+
+Return ONLY a JSON object with this structure:
+
+{
+    "issues_presented": "",
+    "statement_of_case": "",
+    "procedural_history": "",
+    "relevant_facts": "",
+    "applicable_law": "",
+    "movant_arguments": "",
+    "opposition_arguments": "",
+    "oral_argument_matters": ""
+}
+
+SECTION REQUIREMENTS:
+
+ISSUES PRESENTED:
+Identify the precise legal questions raised by the motion.
+Frame each question neutrally.
+
+STATEMENT OF THE CASE:
+Briefly explain how the dispute arose.
+Reuse the existing case overview.
+
+PROCEDURAL HISTORY:
+Summarize the procedural history relevant to the motion.
+Reuse the existing timeline.
+
+RELEVANT FACTS:
+Identify facts material to resolving the motion.
+Distinguish allegations, established facts, and disputed facts.
+For a motion to dismiss, ordinarily treat well-pleaded factual
+allegations as true where the applicable standard requires it.
+
+APPLICABLE LAW:
+Identify the governing legal standards, statutes, rules,
+and relevant precedent appearing in the supplied materials.
+Do not invent legal authorities.
+
+MOVANT ARGUMENTS:
+Summarize the moving party's principal arguments.
+
+OPPOSITION ARGUMENTS:
+Summarize the opposing party's arguments.
+If no response was uploaded, explicitly say so.
+
+ORAL ARGUMENT MATTERS:
+Identify questions that would help the judge resolve
+uncertainties relevant to deciding the motion.
+
+For each question:
+- Identify the issue requiring clarification.
+- Identify which party should address it.
+- Explain why the question matters.
+- Provide a specific question the judge could ask.
+
+GENERAL RULES:
+- Remain neutral.
+- Do not recommend granting or denying the motion.
+- Never invent facts, legal authorities, or citations.
+- Cite original documents by filename and page/paragraph
+  wherever possible.
+- The motion and response are the only original documents
+  examined for this briefing.
+- Other documents are represented by existing AI summaries.
+- Do not claim to have independently verified facts appearing
+  only in those summaries.
+- Identify missing information and conflicting accounts.
+- Write for an experienced federal district judge.
+"""
+
+
+def generate_motion_briefing(
+    client,
+    motion_document,
+    response_document,
+    overview,
+    timeline,
+    document_summaries
+):
+    """
+    Generate a bench memorandum.
+
+    Only the motion and response are examined in full.
+    Other documents are represented by existing summaries.
+    """
+
+    contents = []
+
+    # Reuse the case overview.
+    contents.append(
+        "EXISTING CASE OVERVIEW:\n"
+        + json.dumps(overview, default=str)
+    )
+
+    # Reuse the procedural timeline.
+    contents.append(
+        "EXISTING CASE TIMELINE:\n"
+        + json.dumps(timeline, default=str)
+    )
+
+    # Include summaries of other case documents.
+    motion_name = motion_document[0]
+
+    response_name = (
+        response_document[0]
+        if response_document is not None
+        else None
+    )
+
+    for filename, summary in document_summaries.items():
+
+        if filename in (motion_name, response_name):
+            continue
+
+        contents.append(
+            f"EXISTING SUMMARY OF {filename}:\n"
+            f"{summary}\n"
+        )
+
+    # Read the original motion.
+    contents.append(
+        "PRIMARY DOCUMENT: MOTION UNDER CONSIDERATION"
+    )
+
+    contents.extend(
+        build_content(
+            motion_document[0],
+            motion_document[1]
+        )
+    )
+
+    # Read the original response, if available.
+    if response_document is not None:
+
+        contents.append(
+            "PRIMARY DOCUMENT: RESPONSE TO MOTION"
+        )
+
+        contents.extend(
+            build_content(
+                response_document[0],
+                response_document[1]
+            )
+        )
+
+    else:
+        contents.append(
+            "No response to the selected motion was provided."
+        )
+
+    # Generate structured memorandum.
+    contents.append(MOTION_BRIEFING_PROMPT)
+
+    response = _generate_json(client, contents)
+
+    return json.loads(response.text)
